@@ -6,15 +6,8 @@
 import { ulid } from "ulid";
 import { EventBus } from "../eventBus";
 import { PathTraversalError } from "../errors";
-
-export interface FileVersion {
-  id: string;
-  content: string;
-  timestamp: number;
-  author?: string;
-  hash?: string;
-  prev?: string;
-}
+import { validatePathLength } from "../utils/pathSecurity";
+import { FileVersion } from "./types";
 
 export class VFS {
   private files: Map<string, FileVersion> = new Map();
@@ -23,6 +16,25 @@ export class VFS {
   constructor(private eventBus: EventBus) {}
 
   read(path: string): string | null {
+    // Validate path before reading
+    if (!path || typeof path !== "string") {
+      throw new PathTraversalError("Empty or invalid path");
+    }
+    
+    try {
+      validatePathLength(path, 1024);
+    } catch (err) {
+      throw new PathTraversalError(err instanceof Error ? err.message : String(err));
+    }
+    
+    if (path.includes("\0")) {
+      throw new PathTraversalError("Path contains null bytes");
+    }
+    
+    if (path.includes("..") || path.startsWith("/") || path.startsWith("\\")) {
+      throw new PathTraversalError(path);
+    }
+    
     const v = this.files.get(path);
     return v ? v.content : null;
   }
@@ -30,10 +42,18 @@ export class VFS {
   write(path: string, content: string, author?: string) {
     // Basic validation: reject null bytes and empty paths
     if (!path || typeof path !== "string") {
-      throw new Error("Invalid path: path must be a non-empty string");
+      throw new PathTraversalError("Empty or invalid path");
     }
+    
+    // Validate path length (1024 chars max)
+    try {
+      validatePathLength(path, 1024);
+    } catch (err) {
+      throw new PathTraversalError(err instanceof Error ? err.message : String(err));
+    }
+    
     if (path.includes("\0")) {
-      throw new Error("Invalid path: contains null bytes");
+      throw new PathTraversalError("Path contains null bytes");
     }
 
     // Check for basic traversal attempts (in-memory VFS)
@@ -89,6 +109,25 @@ export class VFS {
   }
 
   delete(path: string, author?: string) {
+    // Validate path before deletion
+    if (!path || typeof path !== "string") {
+      throw new PathTraversalError("Empty or invalid path");
+    }
+    
+    try {
+      validatePathLength(path, 1024);
+    } catch (err) {
+      throw new PathTraversalError(err instanceof Error ? err.message : String(err));
+    }
+    
+    if (path.includes("\0")) {
+      throw new PathTraversalError("Path contains null bytes");
+    }
+    
+    if (path.includes("..") || path.startsWith("/") || path.startsWith("\\")) {
+      throw new PathTraversalError(path);
+    }
+    
     const existed = this.files.has(path);
     if (existed) {
       this.files.delete(path);

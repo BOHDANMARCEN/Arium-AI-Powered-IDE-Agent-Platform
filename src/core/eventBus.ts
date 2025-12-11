@@ -18,45 +18,55 @@ export type EventType =
   | "AgentStepEvent"
   | "AgentFinishEvent"
   | "SecurityEvent"
-  | "ModelErrorEvent";
+  | "ModelErrorEvent"
+  | "EventArchiveEvent" // New event type for archival
+  | "AgentEmergencyStopEvent"; // Emergency stop event (Phase 2.3)
 
-export interface EventEnvelope<T = any> {
+export interface EventEnvelope<T = unknown> {
   id: string;
   type: EventType;
   timestamp: number;
   payload: T;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
-type Listener = (evt: EventEnvelope) => void;
+type Listener<T = unknown> = (evt: EventEnvelope<T>) => void;
 
 export interface EventBusConfig {
   maxHistorySize?: number; // Maximum number of events in memory
   historyRetentionPolicy?: "truncate" | "circular"; // How to handle overflow
+  archiveThreshold?: number; // Archive when history exceeds this (default: maxHistorySize * 0.8)
+  archiveCallback?: (archived: EventEnvelope[]) => void | Promise<void>; // Callback for archived events
 }
 
 export class EventBus {
-  private listeners: Map<EventType | "any", Set<Listener>> = new Map();
-  public history: EventEnvelope[] = [];
-  private config: Required<EventBusConfig>;
+  private listeners: Map<EventType | "any", Set<Listener<unknown>>> = new Map();
+  public history: EventEnvelope<unknown>[] = [];
+  private archived: EventEnvelope<unknown>[] = []; // Archived events
+  private config: Required<Omit<EventBusConfig, "archiveCallback">> & {
+    archiveCallback?: (archived: EventEnvelope<unknown>[]) => void | Promise<void>;
+  };
 
   constructor(config: EventBusConfig = {}) {
+    const maxHistorySize = config.maxHistorySize ?? parseInt(process.env.EVENT_HISTORY_LIMIT || "10000", 10);
     this.config = {
-      maxHistorySize: config.maxHistorySize ?? 10000,
+      maxHistorySize,
       historyRetentionPolicy: config.historyRetentionPolicy ?? "truncate",
+      archiveThreshold: config.archiveThreshold ?? Math.floor(maxHistorySize * 0.8),
+      archiveCallback: config.archiveCallback,
     };
   }
 
-  on(type: EventType | "any", listener: Listener) {
+  on<T = unknown>(type: EventType | "any", listener: Listener<T>) {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
-    this.listeners.get(type)!.add(listener);
+    this.listeners.get(type)!.add(listener as Listener);
   }
 
-  off(type: EventType | "any", listener: Listener) {
-    this.listeners.get(type)?.delete(listener);
+  off<T = unknown>(type: EventType | "any", listener: Listener<T>) {
+    this.listeners.get(type)?.delete(listener as Listener);
   }
 
-  emit<T = any>(type: EventType, payload: T, meta?: Record<string, any>) {
+  emit<T = unknown>(type: EventType, payload: T, meta?: Record<string, unknown>) {
     const envelope: EventEnvelope<T> = {
       id: ulid(),
       type,
@@ -68,13 +78,23 @@ export class EventBus {
     // Append to history
     this.history.push(envelope);
 
+    // Automatic archival when threshold is reached
+    if (this.history.length > this.config.archiveThreshold) {
+      this.archiveOldEvents();
+    }
+
     // Enforce history limits
     if (this.history.length > this.config.maxHistorySize) {
       if (this.config.historyRetentionPolicy === "truncate") {
         const excess = this.history.length - this.config.maxHistorySize;
-        this.history.splice(0, excess);
+        const removed = this.history.splice(0, excess);
+        // Move removed events to archive
+        this.archived.push(...removed);
       } else if (this.config.historyRetentionPolicy === "circular") {
-        this.history.shift();
+        const removed = this.history.shift();
+        if (removed) {
+          this.archived.push(removed);
+        }
       }
     }
 
@@ -116,9 +136,41 @@ export class EventBus {
   }
 
   /**
+   * Archive old events automatically
+   */
+  private archiveOldEvents(): void {
+    const toArchive = Math.floor(this.history.length * 0.2); // Archive 20% of events
+    if (toArchive === 0) return;
+
+    const archived: EventEnvelope<unknown>[] = this.history.splice(0, toArchive);
+    this.archived.push(...archived);
+
+    // Emit archive event
+    this.emit("EventArchiveEvent", {
+      archivedCount: archived.length,
+      totalArchived: this.archived.length,
+      remainingInHistory: this.history.length,
+    });
+
+    // Call archive callback if provided
+    if (this.config.archiveCallback) {
+      try {
+        const result = this.config.archiveCallback(archived);
+        if (result instanceof Promise) {
+          result.catch((err) => {
+            console.error("[EventBus] Archive callback error:", err);
+          });
+        }
+      } catch (err) {
+        console.error("[EventBus] Archive callback error:", err);
+      }
+    }
+  }
+
+  /**
    * Get history with optional filtering
    */
-  getHistory(options?: { since?: number; limit?: number; type?: EventType }): EventEnvelope[] {
+  getHistory<T = unknown>(options?: { since?: number; limit?: number; type?: EventType }): EventEnvelope<T>[] {
     let filtered = this.history;
 
     if (options?.since) {
@@ -134,6 +186,37 @@ export class EventBus {
     }
 
     return filtered;
+  }
+
+  /**
+   * Get archived events
+   */
+  getArchived(): readonly EventEnvelope<unknown>[] {
+    return [...this.archived];
+  }
+
+  /**
+   * Get memory usage metrics
+   */
+  getMemoryMetrics(): {
+    historySize: number;
+    archivedSize: number;
+    totalEvents: number;
+    estimatedMemoryBytes: number;
+  } {
+    const historySize = this.history.length;
+    const archivedSize = this.archived.length;
+    const totalEvents = historySize + archivedSize;
+    
+    // Rough estimate: ~200 bytes per event envelope
+    const estimatedMemoryBytes = totalEvents * 200;
+
+    return {
+      historySize,
+      archivedSize,
+      totalEvents,
+      estimatedMemoryBytes,
+    };
   }
 }
 

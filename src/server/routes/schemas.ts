@@ -5,10 +5,11 @@
 import { z } from "zod";
 
 // Path validation - relative paths only, no traversal
+// Maximum 1024 characters as per Phase 1.1 requirements
 export const PathSchema = z
   .string()
   .min(1)
-  .max(500)
+  .max(1024, "Path must not exceed 1024 characters")
   .refine(
     (val) => !val.includes(".."),
     "Path traversal sequences not allowed"
@@ -20,29 +21,41 @@ export const PathSchema = z
   .refine(
     (val) => !val.match(/%2e|%2f|%5c/i),
     "Encoded traversal sequences not allowed"
+  )
+  .refine(
+    (val) => !val.includes("\0"),
+    "Null bytes not allowed in paths"
   );
 
-// Agent run request
-export const AgentRunSchema = z.object({
-  input: z.string().min(1).max(10000),
-});
+// Agent run request - strict validation, no extra fields
+export const AgentRunSchema = z
+  .object({
+    input: z.string().min(1).max(10000),
+  })
+  .strict();
 
-// VFS read request
-export const VFSReadSchema = z.object({
-  path: PathSchema,
-});
+// VFS read request - strict validation
+export const VFSReadSchema = z
+  .object({
+    path: PathSchema,
+  })
+  .strict();
 
-// VFS write request
-export const VFSWriteSchema = z.object({
-  path: PathSchema,
-  content: z.string().max(10 * 1024 * 1024), // 10MB max
-  encoding: z.enum(["utf8", "base64"]).optional(),
-});
+// VFS write request - strict validation
+export const VFSWriteSchema = z
+  .object({
+    path: PathSchema,
+    content: z.string().max(10 * 1024 * 1024), // 10MB max
+    encoding: z.enum(["utf8", "base64"]).optional(),
+  })
+  .strict();
 
-// Tool invoke request
-export const ToolInvokeSchema = z.object({
-  toolId: z.string().min(1).max(100),
-  args: z.record(z.any()),
-  permissions: z.array(z.string()).optional(),
-});
+// Tool invoke request - strict validation
+export const ToolInvokeSchema = z
+  .object({
+    toolId: z.string().min(1).max(100),
+    args: z.record(z.unknown()),
+    permissions: z.array(z.string()).optional(),
+  })
+  .strict();
 

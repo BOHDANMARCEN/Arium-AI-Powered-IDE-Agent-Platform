@@ -7,7 +7,7 @@ export class AriumError extends Error {
     message: string,
     public code: string,
     public statusCode?: number,
-    public details?: any
+    public details?: Record<string, unknown>
   ) {
     super(message);
     this.name = "AriumError";
@@ -55,7 +55,7 @@ export class ToolNotFoundError extends AriumError {
 }
 
 export class ValidationError extends AriumError {
-  constructor(message: string, details: any) {
+  constructor(message: string, details?: Record<string, unknown>) {
     super(
       `Validation failed: ${message}`,
       "VALIDATION_ERROR",
@@ -66,6 +66,16 @@ export class ValidationError extends AriumError {
     Object.setPrototypeOf(this, ValidationError.prototype);
   }
 }
+
+// Re-export standardized errors for convenience
+export {
+  ValidationError as StandardValidationError,
+  PermissionError,
+  TimeoutError,
+  ModelError,
+  RateLimitError,
+  ResourceError,
+} from "./errors/standardErrors";
 
 export class ModelAdapterError extends AriumError {
   constructor(

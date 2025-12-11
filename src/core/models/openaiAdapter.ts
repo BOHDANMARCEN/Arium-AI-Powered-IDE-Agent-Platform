@@ -83,19 +83,35 @@ export class OpenAIAdapter implements ModelAdapter {
             throw new Error("No response from OpenAI");
           }
 
-          // Handle tool calls
+          // Handle tool calls (Phase 2.5: structured JSON with fallback)
           if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
             const toolCall = choice.message.tool_calls[0];
-            return {
-              type: "tool",
-              tool: toolCall.function.name,
-              arguments: JSON.parse(toolCall.function.arguments || "{}"),
-              usage: {
-                prompt_tokens: response.usage?.prompt_tokens,
-                completion_tokens: response.usage?.completion_tokens,
-                total_tokens: response.usage?.total_tokens,
-              },
-            };
+            try {
+              // Phase 2.5: Parse JSON with fallback
+              const arguments_ = JSON.parse(toolCall.function.arguments || "{}");
+              return {
+                type: "tool",
+                tool: toolCall.function.name,
+                arguments: arguments_,
+                usage: {
+                  prompt_tokens: response.usage?.prompt_tokens,
+                  completion_tokens: response.usage?.completion_tokens,
+                  total_tokens: response.usage?.total_tokens,
+                },
+              };
+            } catch (parseError) {
+              // Fallback: return empty arguments if JSON parsing fails
+              return {
+                type: "tool",
+                tool: toolCall.function.name,
+                arguments: {},
+                usage: {
+                  prompt_tokens: response.usage?.prompt_tokens,
+                  completion_tokens: response.usage?.completion_tokens,
+                  total_tokens: response.usage?.total_tokens,
+                },
+              };
+            }
           }
 
           // Handle final answer
@@ -109,12 +125,12 @@ export class OpenAIAdapter implements ModelAdapter {
               total_tokens: response.usage?.total_tokens,
             },
           };
-        } catch (fetchError: any) {
+        } catch (fetchError: unknown) {
           clearTimeout(timeoutId);
           throw fetchError;
         }
-      } catch (error: any) {
-        lastError = error;
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
 
         // Check if error is retryable
         const isRetryable =
@@ -213,7 +229,7 @@ export class OpenAIAdapter implements ModelAdapter {
           };
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       throw new Error(`OpenAI streaming error: ${error.message}`);
     }
   }

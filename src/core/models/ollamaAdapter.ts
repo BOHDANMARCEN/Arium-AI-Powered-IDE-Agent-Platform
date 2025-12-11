@@ -55,8 +55,8 @@ export class OllamaAdapter implements ModelAdapter {
         throw new Error(`Ollama API error: ${response.statusText}`);
       }
       const data = await response.json();
-      return data.models?.map((m: any) => m.name) || [];
-    } catch (error: any) {
+      return data.models?.map((m: { name: string }) => m.name) || [];
+    } catch (error: unknown) {
       throw new Error(`Failed to list Ollama models: ${error.message}`);
     }
   }
@@ -117,7 +117,7 @@ export class OllamaAdapter implements ModelAdapter {
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
-        } catch (fetchError: any) {
+        } catch (fetchError: unknown) {
           clearTimeout(timeoutId);
           throw fetchError;
         }
@@ -155,8 +155,8 @@ export class OllamaAdapter implements ModelAdapter {
             total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
           },
         };
-      } catch (error: any) {
-        lastError = error;
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
 
         // Check if error is retryable
         const isRetryable =
@@ -259,7 +259,7 @@ export class OllamaAdapter implements ModelAdapter {
       } finally {
         reader.releaseLock();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       throw new Error(`Ollama streaming error: ${error.message}`);
     }
   }
@@ -283,8 +283,32 @@ export class OllamaAdapter implements ModelAdapter {
   /**
    * Parse tool call from response (heuristic-based)
    */
-  private parseToolCall(response: string, tools: ToolSpec[]): { tool: string; arguments: any } | null {
-    // Look for CALL_TOOL pattern
+  /**
+   * Parse tool call from response using structured JSON output (Phase 2.5)
+   * First tries to parse as JSON, then falls back to regex patterns
+   */
+  private parseToolCall(
+    response: string,
+    tools: ToolSpec[]
+  ): { tool: string; arguments: Record<string, unknown> } | null {
+    // Phase 2.5: Try structured JSON parsing first
+    try {
+      // Look for JSON objects in the response (structured output)
+      const jsonMatch = response.match(/\{[\s\S]*"tool"[\s\S]*"arguments"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.tool && parsed.arguments) {
+          const tool = tools.find((t) => t.function.name === parsed.tool);
+          if (tool) {
+            return { tool: parsed.tool, arguments: parsed.arguments };
+          }
+        }
+      }
+    } catch {
+      // JSON parsing failed, fall back to regex
+    }
+
+    // Fallback: Try CALL_TOOL pattern (regex-based, for backward compatibility)
     const callPattern = /CALL_TOOL:\s*(\w+)\s+(\{.*?\})/s;
     const match = response.match(callPattern);
     
@@ -299,9 +323,11 @@ export class OllamaAdapter implements ModelAdapter {
       }
 
       try {
+        // Phase 2.5: Use JSON.parse with fallback
         const arguments_ = JSON.parse(argsStr);
         return { tool: toolName, arguments: arguments_ };
       } catch {
+        // If JSON parsing fails, return null (don't try key=value parsing)
         return null;
       }
     }

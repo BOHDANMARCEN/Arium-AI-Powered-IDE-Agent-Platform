@@ -12,30 +12,24 @@
 import { spawn, ChildProcess } from "child_process";
 import { ToolRunner } from "../index";
 import { EventBus } from "../../eventBus";
+import { Result, ok, err } from "../../utils/result";
+import { TimeoutError, ToolExecutionError } from "../../errors/standardErrors";
 import * as path from "path";
 import * as fs from "fs/promises";
 import * as os from "os";
 
 export interface PyRunnerConfig {
   pythonPath?: string; // Path to Python executable (default: "python3" or "python")
-  timeout?: number; // milliseconds
-  maxMemoryMB?: number; // megabytes
+  timeoutMs?: number; // milliseconds
+  maxMemoryMb?: number; // megabytes
   workingDir?: string; // Working directory for execution
-}
-
-interface PythonExecutionResult {
-  ok: boolean;
-  data?: any;
-  error?: any;
-  stdout?: string;
-  stderr?: string;
 }
 
 export class PyRunner {
   private defaultConfig: Required<Omit<PyRunnerConfig, "pythonPath">> & { pythonPath: string } = {
     pythonPath: this.detectPython(),
-    timeout: 30000, // 30 seconds
-    maxMemoryMB: 256,
+    timeoutMs: 30000, // 30 seconds
+    maxMemoryMb: 256,
     workingDir: os.tmpdir(),
   };
 
@@ -49,14 +43,14 @@ export class PyRunner {
   }
 
   createRunner(code: string, eventBus: EventBus): ToolRunner {
-    return async (args: any) => {
+    return async (args: Record<string, unknown>): Promise<Result<any>> => {
       const pythonPath = this.config.pythonPath || this.defaultConfig.pythonPath;
-      const timeout = this.config.timeout || this.defaultConfig.timeout;
-      const maxMemoryMB = this.config.maxMemoryMB || this.defaultConfig.maxMemoryMB;
+      const timeout = this.config.timeoutMs || this.defaultConfig.timeoutMs;
+      const maxMemoryMB = this.config.maxMemoryMb || this.defaultConfig.maxMemoryMb;
       const workingDir = this.config.workingDir || this.defaultConfig.workingDir;
 
-      // Create temporary Python file and directory
-      const { tempFile, tempDir } = await this.createTempFile(code);
+      // Create temporary Python file and directory (with memory limits)
+      const { tempFile, tempDir } = await this.createTempFile(code, maxMemoryMB);
 
       try {
         // Prepare input as JSON
@@ -73,15 +67,19 @@ export class PyRunner {
           eventBus
         );
 
-        return result;
-      } catch (error: any) {
-        return {
-          ok: false,
-          error: {
-            message: error.message,
-            type: "PyRunnerError",
-          },
-        };
+        if (!result.ok) {
+          if (result.stderr) {
+            return err(new ToolExecutionError(result.stderr));
+          }
+          return err(new ToolExecutionError(result.error?.message || "Unknown Python execution error"));
+        }
+
+        return ok(result.data);
+      } catch (error: unknown) {
+        if (error instanceof TimeoutError) {
+          return err(error);
+        }
+        return err(new ToolExecutionError(error instanceof Error ? error.message : String(error)));
       } finally {
         // Clean up temp directory and all files recursively
         try {
@@ -94,10 +92,33 @@ export class PyRunner {
     };
   }
 
-  private async createTempFile(code: string): Promise<{ tempFile: string; tempDir: string }> {
+  private async createTempFile(
+    code: string,
+    maxMemoryMb?: number
+  ): Promise<{ tempFile: string; tempDir: string }> {
+    // Set memory limits using resource.setrlimit (Phase 1.6 requirement)
+    const memoryLimitCode = maxMemoryMb
+      ? `
+import resource
+# Set memory limit (RLIMIT_AS = virtual memory)
+# Convert MB to bytes
+max_memory_bytes = ${maxMemoryMb} * 1024 * 1024
+try:
+    resource.setrlimit(resource.RLIMIT_AS, (max_memory_bytes, max_memory_bytes))
+except (ValueError, OSError) as e:
+    # On some systems, setting RLIMIT_AS may fail
+    # Try RLIMIT_RSS (resident set size) as fallback
+    try:
+        resource.setrlimit(resource.RLIMIT_RSS, (max_memory_bytes, max_memory_bytes))
+    except:
+        pass  # Continue if limits can't be set
+`
+      : "";
+
     const wrapperCode = `
 import json
 import sys
+${memoryLimitCode}
 
 # Read input from stdin
 input_data = json.loads(sys.stdin.read())
@@ -122,6 +143,16 @@ try:
     
     # Output JSON result
     print(json.dumps(output, indent=2))
+except MemoryError:
+    error_output = {
+        "ok": False,
+        "error": {
+            "message": "Memory limit exceeded",
+            "type": "MemoryError"
+        }
+    }
+    print(json.dumps(error_output, indent=2))
+    sys.exit(1)
 except Exception as e:
     error_output = {
         "ok": False,
@@ -148,7 +179,7 @@ except Exception as e:
     maxMemoryMB: number,
     workingDir: string,
     eventBus: EventBus
-  ): Promise<PythonExecutionResult> {
+  ): Promise<{ ok: boolean; data?: unknown; error?: { message: string; type?: string; [key: string]: unknown }; stdout?: string; stderr?: string; }> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
 
@@ -200,7 +231,7 @@ except Exception as e:
           }, 1000);
 
           reject(
-            new Error(
+            new TimeoutError(
               `Python execution timeout after ${timeout}ms`
             )
           );
@@ -247,11 +278,11 @@ except Exception as e:
             stdout: stdout.trim(),
             stderr: stderr.trim(),
           });
-        } catch (parseError: any) {
+        } catch (parseError: unknown) {
           resolve({
             ok: false,
             error: {
-              message: `Failed to parse Python output: ${parseError.message}`,
+              message: `Failed to parse Python output: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
               stdout: stdout.trim(),
               stderr: stderr.trim(),
             },
@@ -267,7 +298,7 @@ except Exception as e:
         if (!killed) {
           killed = true;
           reject(
-            new Error(
+            new ToolExecutionError(
               `Failed to spawn Python process: ${error.message}. Is Python installed?`
             )
           );
@@ -315,12 +346,11 @@ except Exception as e:
       await fs.rm(tempDir, { recursive: true, force: true });
 
       return { valid: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         valid: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
 }
-

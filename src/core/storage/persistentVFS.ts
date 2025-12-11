@@ -9,6 +9,7 @@ import * as path from "path";
 import { VFS, FileVersion } from "../vfs";
 import { EventBus } from "../eventBus";
 import { PathTraversalError, VFSError } from "../errors";
+import { secureResolvePath, validatePathLength } from "../utils/pathSecurity";
 
 export interface PersistentVFSConfig {
   workspacePath: string;
@@ -34,48 +35,15 @@ export class PersistentVFS extends VFS {
 
   /**
    * Resolve and validate VFS path to prevent path traversal attacks
+   * Uses secureResolvePath utility for consistent security
    * @throws PathTraversalError if path is invalid or attempts traversal
    */
   private resolveVfsPath(userPath: string): string {
-    if (!userPath || typeof userPath !== "string") {
-      throw new PathTraversalError("Empty or invalid path");
-    }
-
-    // Reject null bytes
-    if (userPath.includes("\0")) {
-      throw new PathTraversalError("Path contains null bytes");
-    }
-
-    // Decode URI-encoded input (handles %2e%2e%2f, etc.)
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(userPath);
-    } catch {
-      decoded = userPath; // If decoding fails, use original
-    }
-
-    // Remove leading slashes and normalize
-    const cleaned = decoded.replace(/^[/\\]+/, "");
-
-    // Check for traversal sequences (including encoded)
-    if (
-      cleaned.includes("..") ||
-      cleaned.match(/%2e|%2f|%5c/i) ||
-      path.isAbsolute(cleaned)
-    ) {
-      throw new PathTraversalError(userPath);
-    }
-
-    // Resolve to absolute path within workspace
-    const resolved = path.resolve(this.filesDir, cleaned);
-    const filesDirResolved = path.resolve(this.filesDir);
-
-    // Ensure resolved path is within filesDir
-    if (!resolved.startsWith(filesDirResolved + path.sep) && resolved !== filesDirResolved) {
-      throw new PathTraversalError(userPath);
-    }
-
-    return path.relative(filesDirResolved, resolved);
+    // Validate path length (1024 chars max)
+    validatePathLength(userPath, 1024);
+    
+    // Securely resolve path
+    return secureResolvePath(this.filesDir, userPath);
   }
 
   async initialize() {
