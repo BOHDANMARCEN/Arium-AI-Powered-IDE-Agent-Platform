@@ -1,0 +1,9 @@
+{
+  "providers": {
+    "ollama": {
+      "defaultModel": "llama3.2:3b",
+      "autoStart": true,
+      "warmupPrompt": "warmup"
+    }
+  }
+}
