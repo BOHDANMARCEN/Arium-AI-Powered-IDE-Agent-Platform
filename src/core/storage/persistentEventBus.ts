@@ -17,7 +17,12 @@ export class PersistentEventBus extends EventBus {
   private logStream: fs.FileHandle | null = null;
 
   constructor(config: PersistentEventBusConfig) {
-    super();
+    // Pass config to parent EventBus
+    const maxHistorySize = parseInt(process.env.EVENT_HISTORY_LIMIT || "10000", 10);
+    super({
+      maxHistorySize,
+      historyRetentionPolicy: "truncate",
+    });
     this.logPath = path.join(config.workspacePath, config.projectId, "history.log");
   }
 

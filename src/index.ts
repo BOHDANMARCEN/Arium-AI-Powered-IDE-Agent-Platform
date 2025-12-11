@@ -36,14 +36,21 @@ async function main() {
       projectId,
     }).initialize();
 
-    // Persistent VFS
-    vfs = await new PersistentVFS(eventBus, {
+    // Persistent VFS with max file size
+    const maxFileSize = parseInt(process.env.VFS_MAX_FILE_BYTES || "10000000", 10);
+    const persistentVFS = await new PersistentVFS(eventBus, {
       workspacePath,
       projectId,
+      maxFileSize,
     }).initialize();
+    vfs = persistentVFS as VFS;
   } else {
     console.log("💾 Using in-memory storage");
-    eventBus = new EventBus();
+    const maxHistorySize = parseInt(process.env.EVENT_HISTORY_LIMIT || "10000", 10);
+    eventBus = new EventBus({
+      maxHistorySize,
+      historyRetentionPolicy: "truncate",
+    });
     vfs = new VFS(eventBus);
   }
 

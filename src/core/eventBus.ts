@@ -11,6 +11,8 @@ export type EventType =
   | "ModelResponseEvent"
   | "ToolInvocationEvent"
   | "ToolResultEvent"
+  | "ToolErrorEvent"
+  | "ToolExecutionEvent"
   | "VFSChangeEvent"
   | "AgentStartEvent"
   | "AgentStepEvent"
@@ -28,9 +30,22 @@ export interface EventEnvelope<T = any> {
 
 type Listener = (evt: EventEnvelope) => void;
 
+export interface EventBusConfig {
+  maxHistorySize?: number; // Maximum number of events in memory
+  historyRetentionPolicy?: "truncate" | "circular"; // How to handle overflow
+}
+
 export class EventBus {
   private listeners: Map<EventType | "any", Set<Listener>> = new Map();
   public history: EventEnvelope[] = [];
+  private config: Required<EventBusConfig>;
+
+  constructor(config: EventBusConfig = {}) {
+    this.config = {
+      maxHistorySize: config.maxHistorySize ?? 10000,
+      historyRetentionPolicy: config.historyRetentionPolicy ?? "truncate",
+    };
+  }
 
   on(type: EventType | "any", listener: Listener) {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
@@ -49,18 +64,76 @@ export class EventBus {
       payload,
       meta,
     };
-    // append-only history
+
+    // Append to history
     this.history.push(envelope);
 
-    // notify typed listeners
-    const typed = this.listeners.get(type);
-    if (typed) for (const l of typed) try { l(envelope); } catch (e) { /* listener errors shouldn't crash bus */ }
+    // Enforce history limits
+    if (this.history.length > this.config.maxHistorySize) {
+      if (this.config.historyRetentionPolicy === "truncate") {
+        const excess = this.history.length - this.config.maxHistorySize;
+        this.history.splice(0, excess);
+      } else if (this.config.historyRetentionPolicy === "circular") {
+        this.history.shift();
+      }
+    }
 
-    // notify 'any' listeners
+    // Notify typed listeners
+    const typed = this.listeners.get(type);
+    if (typed) {
+      for (const l of typed) {
+        try {
+          l(envelope);
+        } catch (e) {
+          // Emit error event instead of silently ignoring
+          console.error(`[EventBus] Listener error for ${type}:`, e);
+          try {
+            this.emit("ModelErrorEvent", {
+              type,
+              error: (e as Error).message,
+              listener: l.name || "anonymous",
+            });
+          } catch {
+            // If emitting error event fails, just log
+          }
+        }
+      }
+    }
+
+    // Notify 'any' listeners
     const any = this.listeners.get("any");
-    if (any) for (const l of any) try { l(envelope); } catch (e) { /* ignore */ }
+    if (any) {
+      for (const l of any) {
+        try {
+          l(envelope);
+        } catch (e) {
+          console.error(`[EventBus] Listener error (any):`, e);
+        }
+      }
+    }
 
     return envelope;
+  }
+
+  /**
+   * Get history with optional filtering
+   */
+  getHistory(options?: { since?: number; limit?: number; type?: EventType }): EventEnvelope[] {
+    let filtered = this.history;
+
+    if (options?.since) {
+      filtered = filtered.filter((e) => e.timestamp >= options.since!);
+    }
+
+    if (options?.type) {
+      filtered = filtered.filter((e) => e.type === options.type);
+    }
+
+    if (options?.limit) {
+      filtered = filtered.slice(-options.limit);
+    }
+
+    return filtered;
   }
 }
 

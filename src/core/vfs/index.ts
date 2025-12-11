@@ -5,6 +5,7 @@
 
 import { ulid } from "ulid";
 import { EventBus } from "../eventBus";
+import { PathTraversalError } from "../errors";
 
 export interface FileVersion {
   id: string;
@@ -27,6 +28,19 @@ export class VFS {
   }
 
   write(path: string, content: string, author?: string) {
+    // Basic validation: reject null bytes and empty paths
+    if (!path || typeof path !== "string") {
+      throw new Error("Invalid path: path must be a non-empty string");
+    }
+    if (path.includes("\0")) {
+      throw new Error("Invalid path: contains null bytes");
+    }
+
+    // Check for basic traversal attempts (in-memory VFS)
+    if (path.includes("..") || path.startsWith("/") || path.startsWith("\\")) {
+      throw new PathTraversalError(path);
+    }
+
     const prev = this.files.get(path)?.id;
     const ver: FileVersion = {
       id: ulid(),
@@ -88,7 +102,7 @@ export class VFS {
     return { ok: false, error: { message: "File not found", path } };
   }
 
-  private simpleHash(s: string) {
+  protected simpleHash(s: string) {
     // non-cryptographic small hash for demo
     let h = 2166136261 >>> 0;
     for (let i = 0; i < s.length; i++) {

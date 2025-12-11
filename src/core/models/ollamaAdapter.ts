@@ -5,6 +5,7 @@
  */
 
 import { ModelAdapter, ModelResponse, ModelAdapterOptions, ToolSpec } from "./adapter";
+import { ModelAdapterError } from "../errors";
 
 export interface OllamaAdapterConfig {
   baseURL?: string; // Ollama API base URL (default: http://localhost:11434)
@@ -75,71 +76,114 @@ export class OllamaAdapter implements ModelAdapter {
   }
 
   async generate(prompt: string, options?: ModelAdapterOptions): Promise<ModelResponse> {
-    try {
-      // Build prompt with system message and tools if needed
-      let fullPrompt = prompt;
-      
-      if (options?.tools && options.tools.length > 0) {
-        // For Ollama, we'll include tool descriptions in the prompt
-        // Note: Ollama doesn't have native function calling, so we use prompt engineering
-        const toolsDescription = this.formatToolsForPrompt(options.tools);
-        fullPrompt = `${toolsDescription}\n\nUser: ${prompt}\nAssistant:`;
-      }
+    const maxRetries = 3;
+    const timeoutMs = 60000; // 60 seconds
+    let lastError: Error | null = null;
 
-      const requestBody: OllamaRequest = {
-        model: this.model,
-        prompt: fullPrompt,
-        stream: false,
-        options: {
-          temperature: options?.temperature ?? 0.7,
-          num_predict: options?.max_tokens ?? 2048,
-        },
-      };
-
-      const response = await fetch(`${this.baseURL}/api/generate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama API error: ${response.statusText} - ${errorText}`);
-      }
-
-      const data: OllamaResponse = await response.json();
-
-      // Parse response for tool calls (simple heuristic-based parsing)
-      if (options?.tools && options.tools.length > 0) {
-        const toolCall = this.parseToolCall(data.response, options.tools);
-        if (toolCall) {
-          return {
-            type: "tool",
-            tool: toolCall.tool,
-            arguments: toolCall.arguments,
-            usage: {
-              prompt_tokens: data.prompt_eval_count,
-              completion_tokens: data.eval_count,
-              total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
-            },
-          };
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Build prompt with system message and tools if needed
+        let fullPrompt = prompt;
+        
+        if (options?.tools && options.tools.length > 0) {
+          // For Ollama, we'll include tool descriptions in the prompt
+          // Note: Ollama doesn't have native function calling, so we use prompt engineering
+          const toolsDescription = this.formatToolsForPrompt(options.tools);
+          fullPrompt = `${toolsDescription}\n\nUser: ${prompt}\nAssistant:`;
         }
-      }
 
-      return {
-        type: "final",
-        content: data.response,
-        usage: {
-          prompt_tokens: data.prompt_eval_count,
-          completion_tokens: data.eval_count,
-          total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
-        },
-      };
-    } catch (error: any) {
-      throw new Error(`Ollama adapter error: ${error.message}`);
+        const requestBody: OllamaRequest = {
+          model: this.model,
+          prompt: fullPrompt,
+          stream: false,
+          options: {
+            temperature: options?.temperature ?? 0.7,
+            num_predict: options?.max_tokens ?? 2048,
+          },
+        };
+
+        // Add timeout using AbortController
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        let response: Response;
+        try {
+          response = await fetch(`${this.baseURL}/api/generate`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          throw fetchError;
+        }
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Ollama API error: ${response.statusText} - ${errorText}`);
+        }
+
+        const data: OllamaResponse = await response.json();
+
+        // Parse response for tool calls (simple heuristic-based parsing)
+        if (options?.tools && options.tools.length > 0) {
+          const toolCall = this.parseToolCall(data.response, options.tools);
+          if (toolCall) {
+            return {
+              type: "tool",
+              tool: toolCall.tool,
+              arguments: toolCall.arguments,
+              usage: {
+                prompt_tokens: data.prompt_eval_count,
+                completion_tokens: data.eval_count,
+                total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
+              },
+            };
+          }
+        }
+
+        return {
+          type: "final",
+          content: data.response,
+          usage: {
+            prompt_tokens: data.prompt_eval_count,
+            completion_tokens: data.eval_count,
+            total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
+          },
+        };
+      } catch (error: any) {
+        lastError = error;
+
+        // Check if error is retryable
+        const isRetryable =
+          error.message?.includes("fetch failed") ||
+          error.message?.includes("timeout") ||
+          error.message?.includes("ECONNREFUSED") ||
+          error.message?.includes("ETIMEDOUT") ||
+          error.message?.includes("500") ||
+          error.message?.includes("503") ||
+          error.name === "AbortError";
+
+        if (isRetryable && attempt < maxRetries - 1) {
+          // Exponential backoff
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue; // Retry
+        }
+
+        throw new ModelAdapterError(error.message || "Unknown error", "ollama", error);
+      }
     }
+
+    throw new ModelAdapterError(
+      lastError?.message || "Unknown error after retries",
+      "ollama",
+      lastError || undefined
+    );
   }
 
   async *stream(

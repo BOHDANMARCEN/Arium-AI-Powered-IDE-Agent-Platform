@@ -1,5 +1,8 @@
-export async function withRetries(fn, opts = { retries: 3, baseMs: 200 }) {
-  const { retries, baseMs } = opts;
+export async function withRetries<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number } = { retries: 3, baseMs: 200 }
+): Promise<T> {
+  const { retries = 3, baseMs = 200 } = opts;
   let attempt = 0;
   while (attempt <= retries) {
     try {
@@ -11,4 +14,5 @@ export async function withRetries(fn, opts = { retries: 3, baseMs: 200 }) {
       attempt++;
     }
   }
+  throw new Error("Unreachable");
 }

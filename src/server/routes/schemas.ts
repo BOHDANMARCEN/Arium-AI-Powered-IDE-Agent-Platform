@@ -36,6 +36,7 @@ export const VFSReadSchema = z.object({
 export const VFSWriteSchema = z.object({
   path: PathSchema,
   content: z.string().max(10 * 1024 * 1024), // 10MB max
+  encoding: z.enum(["utf8", "base64"]).optional(),
 });
 
 // Tool invoke request

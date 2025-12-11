@@ -34,8 +34,14 @@ export class JSRunner {
         timeout: this.config.timeout ?? this.defaultConfig.timeout,
         memoryLimit: this.config.memoryLimit ?? this.defaultConfig.memoryLimit,
         sandbox: {
-          // Safe globals
-          console,
+          // Safe globals only - removed dangerous ones
+          // Safe console wrapper (no access to process, fs, etc.)
+          console: {
+            log: (...args: any[]) => console.log("[JS Tool]", ...args),
+            error: (...args: any[]) => console.error("[JS Tool]", ...args),
+            warn: (...args: any[]) => console.warn("[JS Tool]", ...args),
+            info: (...args: any[]) => console.info("[JS Tool]", ...args),
+          },
           setTimeout,
           clearTimeout,
           setInterval,
@@ -43,7 +49,9 @@ export class JSRunner {
           Date,
           Math,
           JSON,
-          Buffer,
+          // Removed Buffer - can be used for memory attacks
+          // Removed process - can access system info
+          // Removed require - can load arbitrary modules
           // Custom sandbox
           ...this.config.sandbox,
           // Tool context

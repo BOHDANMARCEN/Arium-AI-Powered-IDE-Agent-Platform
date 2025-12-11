@@ -1,8 +1,8 @@
-export function promptTokenEstimate(str: string) {
+export function promptTokenEstimate(str: string): number {
   return Math.ceil(str.length / 4);
 }
 
-export function ensurePromptLimit(prompt, maxTokens = 4000) {
+export function ensurePromptLimit(prompt: string, maxTokens = 4000): string {
   const tokens = promptTokenEstimate(prompt);
   if (tokens <= maxTokens) return prompt;
   const parts = prompt.split("\n");

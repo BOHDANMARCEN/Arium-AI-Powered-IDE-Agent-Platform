@@ -55,8 +55,8 @@ export class PyRunner {
       const maxMemoryMB = this.config.maxMemoryMB || this.defaultConfig.maxMemoryMB;
       const workingDir = this.config.workingDir || this.defaultConfig.workingDir;
 
-      // Create temporary Python file
-      const tempFile = await this.createTempFile(code);
+      // Create temporary Python file and directory
+      const { tempFile, tempDir } = await this.createTempFile(code);
 
       try {
         // Prepare input as JSON
@@ -83,17 +83,18 @@ export class PyRunner {
           },
         };
       } finally {
-        // Clean up temp file
+        // Clean up temp directory and all files recursively
         try {
-          await fs.unlink(tempFile);
+          await fs.rm(tempDir, { recursive: true, force: true });
         } catch (e) {
-          // Ignore cleanup errors
+          // Ignore cleanup errors, but log them
+          console.warn(`[PyRunner] Failed to cleanup temp directory ${tempDir}:`, e);
         }
       }
     };
   }
 
-  private async createTempFile(code: string): Promise<string> {
+  private async createTempFile(code: string): Promise<{ tempFile: string; tempDir: string }> {
     const wrapperCode = `
 import json
 import sys
@@ -136,7 +137,7 @@ except Exception as e:
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "arium-py-"));
     const tempFile = path.join(tempDir, "tool.py");
     await fs.writeFile(tempFile, wrapperCode, "utf-8");
-    return tempFile;
+    return { tempFile, tempDir };
   }
 
   private async executePython(
@@ -283,7 +284,7 @@ except Exception as e:
 
     try {
       // Create temporary validation script
-      const tempFile = await this.createTempFile(code);
+      const { tempFile, tempDir } = await this.createTempFile(code);
       
       // Try to compile the code
       const child = spawn(pythonPath, ["-m", "py_compile", tempFile], {
@@ -293,13 +294,13 @@ except Exception as e:
       let errorOutput = "";
 
       if (child.stderr) {
-        child.stderr.on("data", (data) => {
+        child.stderr.on("data", (data: Buffer) => {
           errorOutput += data.toString();
         });
       }
 
       await new Promise<void>((resolve, reject) => {
-        child.on("exit", (code) => {
+        child.on("exit", (code: number | null) => {
           if (code === 0) {
             resolve();
           } else {
@@ -310,8 +311,8 @@ except Exception as e:
         child.on("error", reject);
       });
 
-      // Clean up
-      await fs.unlink(tempFile);
+      // Clean up temp directory
+      await fs.rm(tempDir, { recursive: true, force: true });
 
       return { valid: true };
     } catch (error: any) {

@@ -1,5 +1,5 @@
 import Ajv from "ajv";
-const ajv = new Ajv({ allErrors: true, removeAdditional: "fail" });
+const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
 const toolSchema = {
   type: "object",
@@ -16,7 +16,7 @@ const toolSchema = {
 
 const validateTool = ajv.compile(toolSchema);
 
-export function validateToolDef(def) {
+export function validateToolDef(def: any): boolean {
   const ok = validateTool(def);
   if (!ok) throw new Error("Invalid tool definition: " + ajv.errorsText(validateTool.errors));
   return true;

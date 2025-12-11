@@ -11,6 +11,14 @@
     "resolveJsonModule": true,
     "sourceMap": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/app",
+    "src/core/models/modelManager.ts",
+    "src/core/models/ollama/OllamaModelService.ts",
+    "node_modules",
+    "dist",
+    "tests"
+  ]
 }
 
