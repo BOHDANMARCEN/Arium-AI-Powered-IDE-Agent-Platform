@@ -1,0 +1,64 @@
+<svg width="980" height="360" viewBox="0 0 980 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Arium high level architecture diagram">
+  <defs>
+    <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#60a5fa" stop-opacity="0.14"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0.12"/></linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 z" fill="#60a5fa"/>
+    </marker>
+  </defs>
+
+  <!-- background panel -->
+  <rect x="8" y="8" width="964" height="344" rx="14" fill="url(#g1)" opacity="0.06"/>
+
+  <!-- UI Shell -->
+  <g transform="translate(30,24)">
+    <rect x="0" y="0" width="220" height="80" rx="10" fill="#0b1220" stroke="#1f2937"/>
+    <text x="110" y="28" text-anchor="middle" font-size="14" fill="#cfe3ff" font-weight="700">UI Shell</text>
+    <text x="110" y="48" text-anchor="middle" font-size="12" fill="#9fb7d9">Editors • Console • Explorer</text>
+  </g>
+
+  <!-- Event Bus -->
+  <g transform="translate(280,24)">
+    <rect x="0" y="0" width="420" height="110" rx="10" fill="#071027" stroke="#1f2b3a"/>
+    <text x="210" y="28" text-anchor="middle" font-size="14" fill="#dbeafe" font-weight="700">Arium Event Bus</text>
+    <text x="210" y="50" text-anchor="middle" font-size="12" fill="#9fb7d9">Typed events • Append-only history</text>
+
+    <!-- bus lanes -->
+    <g transform="translate(20,72)">
+      <rect x="0" y="0" width="380" height="10" rx="6" fill="#0ea5a4" opacity="0.12"/>
+      <rect x="0" y="0" width="240" height="10" rx="6" fill="#7dd3fc" opacity="0.06"/>
+    </g>
+  </g>
+
+  <!-- Core systems -->
+  <g transform="translate(280,160)">
+    <rect x="0" y="0" width="420" height="170" rx="12" fill="#071227" stroke="#14202b" filter="url(#shadow)"/>
+    <text x="210" y="24" text-anchor="middle" font-size="14" fill="#dbeafe" font-weight="700">Core Systems</text>
+    <!-- Agents -->
+    <rect x="18" y="42" width="120" height="100" rx="10" fill="#081226" stroke="#183047"/>
+    <text x="78" y="68" text-anchor="middle" font-size="12" fill="#cfe3ff" font-weight="700">Agent Core</text>
+    <text x="78" y="86" text-anchor="middle" font-size="11" fill="#9fb7d9">Planner • Memory • Loop</text>
+    <!-- Tool Engine -->
+    <rect x="150" y="42" width="120" height="100" rx="10" fill="#081226" stroke="#183047"/>
+    <text x="210" y="68" text-anchor="middle" font-size="12" fill="#cfe3ff" font-weight="700">Tool Engine</text>
+    <text x="210" y="86" text-anchor="middle" font-size="11" fill="#9fb7d9">Runners • Permissions</text>
+    <!-- VFS -->
+    <rect x="282" y="42" width="120" height="100" rx="10" fill="#081226" stroke="#183047"/>
+    <text x="342" y="68" text-anchor="middle" font-size="12" fill="#cfe3ff" font-weight="700">VFS</text>
+    <text x="342" y="86" text-anchor="middle" font-size="11" fill="#9fb7d9">Snapshots • Versions</text>
+  </g>
+
+  <!-- arrows UI -> Bus -->
+  <path d="M250 64 L280 64" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- arrows Bus -> Core -->
+  <path d="M460 136 L460 160" stroke="#7dd3fc" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- labels -->
+  <text x="48" y="120" font-size="11" fill="#9fb7d9">User Actions</text>
+  <text x="520" y="140" font-size="11" fill="#9fb7d9">Events • History</text>
+
+</svg>
+

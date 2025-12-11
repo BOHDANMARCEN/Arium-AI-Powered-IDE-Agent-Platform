@@ -1,0 +1,374 @@
+# Arium Tool Engine — Technical Specification
+
+**Version:** 1.0  
+**Authors:** Bogdan Marcen & ChatGPT 5.1 (AI Co-Developer)
+
+The Tool Engine is one of the core subsystems of Arium.  
+It defines how agents can execute structured actions, interact with the file system, call external runtimes, and integrate custom developer-defined tools.
+
+This document describes the design, lifecycle, schemas, security model, and extensibility mechanisms of the Tool Engine.
+
+---
+
+# 1. Purpose of the Tool Engine
+
+The Tool Engine provides Arium with the ability to:
+
+* validate and execute structured tool calls
+* isolate execution via sandboxes
+* enforce permissions
+* produce consistent structured output
+* integrate user-defined tools without modifying core code
+* support JS, Python, and built-in runners
+* allow agents to reliably orchestrate sequences of actions
+
+It acts as the "action layer" of Arium's reasoning ecosystem.
+
+---
+
+# 2. Tool Definition Format
+
+Tools are defined in JSON or YAML.  
+Every tool contains metadata, schema, permissions, and runner config.
+
+**Example:**
+
+```json
+{
+  "id": "fs.read",
+  "name": "Read File",
+  "description": "Reads content from VFS",
+  "runner": "builtin",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" }
+    },
+    "required": ["path"]
+  },
+  "permissions": ["vfs.read"]
+}
+```
+
+---
+
+# 3. Tool Engine Architecture Diagram
+
+```
+┌────────────────────────────┐
+│      Agent Core (LLM)      │
+│   tool call instructions   │
+└───────────────▲────────────┘
+                │
+                │ ToolInvocationEvent
+                ▼
+        ┌───────────────────┐
+        │   Tool Engine     │
+        │ Validation & Exec │
+        └───────┬───────────┘
+                │
+                │ validated params
+                ▼
+        ┌───────────────────┐
+        │    Runner Layer   │
+        │  builtin/js/py    │
+        └───────┬───────────┘
+                │
+                │ tool output (JSON)
+                ▼
+        ┌───────────────────┐
+        │ Event Bus / UI    │
+        └───────────────────┘
+```
+
+---
+
+# 4. Tool Lifecycle (Step-by-Step)
+
+When a tool call occurs, the lifecycle is the following:
+
+### **1. Tool lookup**
+
+The engine retrieves tool metadata from:
+
+```
+workspace/<project>/tools/
+```
+
+### **2. Schema validation**
+
+Using JSON Schema rules:
+
+* type checking
+* required fields
+* allowed enums
+* deep object validation
+
+If validation fails → **ToolErrorEvent**.
+
+### **3. Permission check**
+
+Tool must explicitly define required permissions.
+
+**Examples:**
+
+* `vfs.read`
+* `vfs.write`
+* `exec.js`
+* `exec.py`
+* `net.request` (future)
+
+If missing → **SecurityEvent: denied**.
+
+### **4. Runner execution**
+
+Depending on `runner`:
+
+| Runner      | Description                                               |
+| ----------- | --------------------------------------------------------- |
+| `builtin`   | Internal primitives (VFS operations, diff, hashing, etc.) |
+| `js-runner` | Executes JavaScript in Node/Deno sandbox                  |
+| `py-runner` | Executes Python in isolated subprocess                    |
+
+### **5. Timeout & resource guard**
+
+Sandbox rules:
+
+* max runtime (default: 30000 ms)
+* max memory
+* restricted fs paths
+* restricted globals
+
+### **6. Structured output**
+
+Tool must return:
+
+```json
+{ "ok": true, "data": {...} }
+```
+
+or
+
+```json
+{ "ok": false, "error": {...} }
+```
+
+### **7. Event emission**
+
+Engine publishes:
+
+* `ToolResultEvent`
+* possible `SecurityEvent`
+* possible `ToolErrorEvent`
+
+---
+
+# 5. Built-in Tools
+
+Built-in tools provide essential operations.
+
+### **fs.read**
+
+Reads a VFS file.
+
+### **fs.write**
+
+Writes to the VFS, with diff tracking.
+
+### **vfs.diff**
+
+Returns a diff between two snapshots.
+
+### **system.hash**
+
+Computes a hash of a file or string.
+
+### **system.exec** *(experimental)*
+
+Executes simple shell commands in a controlled environment.
+
+All built-in tools are permission-scoped.
+
+---
+
+# 6. Runner Layer
+
+## 6.1 Built-in Runner
+
+Used for internal operations.  
+Cannot escape sandbox.  
+Fastest and most secure.
+
+---
+
+## 6.2 JS Runner (Node/Deno Sandbox)
+
+The JS runner executes JavaScript tool scripts.
+
+### Security Controls
+
+* VM2 / Deno isolate
+* No unrestricted filesystem access
+* Limited global scope
+* Memory limits
+
+### Example JS tool:
+
+```javascript
+export default async function run({ text }) {
+  return { length: text.length };
+}
+```
+
+---
+
+## 6.3 Python Runner
+
+Executes Python code in a subprocess.
+
+### Advantages
+
+* Popular for ML + automation tasks
+* Easy to write custom tools
+
+### Example Python tool:
+
+```python
+def run(input):
+    import json
+    return { "reversed": input["text"][::-1] }
+```
+
+---
+
+# 7. Tool Permissions
+
+Permissions define what the tool *is allowed to do*.  
+This is a security-critical component.
+
+**Examples:**
+
+* `vfs.read`
+* `vfs.write`
+* `exec.js`
+* `exec.py`
+* `net.fetch` *(future)*
+* `sys.info`
+
+Tools without proper permissions are automatically denied.
+
+---
+
+# 8. Events Generated by Tool Engine
+
+### ToolInvocationEvent
+
+Emitted when tool is called.
+
+### ToolResultEvent
+
+Returned output.
+
+### ToolErrorEvent
+
+Validation error, runtime error, or failure.
+
+### SecurityEvent
+
+Permission violation or sandbox intrusion attempt.
+
+---
+
+# 9. Error Handling Model
+
+Errors are normalized:
+
+```json
+{
+  "type": "ToolError",
+  "tool": "fs.read",
+  "message": "File not found",
+  "stack": "...",
+  "stage": "execution"
+}
+```
+
+**Stages:**
+
+* `validation`
+* `permission`
+* `execution`
+* `transport` (future)
+
+---
+
+# 10. Tool Registration & Discovery
+
+Tools are stored in:
+
+```
+workspace/<project>/tools/*.json
+```
+
+Tools can also be bundled as plugins.
+
+**Discovery process:**
+
+1. Scan directory
+2. Validate schema
+3. Index by ID
+4. Expose to agent as callable functions
+
+---
+
+# 11. Example Tool Execution Flow
+
+```
+[Agent Output: call fs.read]
+             ↓
+ToolInvocationEvent
+             ↓
+Tool Engine
+  - validate
+  - permissions
+  - runner
+  - timeout
+             ↓
+Runner
+  - execute tool code
+             ↓
+Result
+             ↓
+ToolResultEvent
+             ↓
+Agent Core continues reasoning
+```
+
+---
+
+# 12. Future Extensions
+
+Planned improvements:
+
+### **Custom WASM runner**
+
+For memory-safe cross-language tools.
+
+### **Remote tool execution**
+
+Secure RPC execution in distributed mode.
+
+### **Pinned environments**
+
+Nix-like reproducible tool environments.
+
+### **Incremental snapshots**
+
+For tool execution state.
+
+### **GPU tool runner**
+
+For local ML inference with CUDA.
+
+---
+
