@@ -78,7 +78,7 @@ async function main() {
       required: ["text"]
     }
   }, `
-    export default async function run(args) {
+    async function run(args) {
       const words = args.text.trim().split(/\\s+/).filter(word => word.length > 0);
       return {
         ok: true,
@@ -129,16 +129,42 @@ def run(args):
   vfs.write("src/main.ts", "// hello world\n", "bootstrap");
 
   // Initialize model adapter
-  // Use OpenAI if API key is provided, otherwise fall back to MockAdapter
+  // Priority: OpenAI > Ollama > MockAdapter
   let modelAdapter;
   if (process.env.OPENAI_API_KEY) {
-    console.log("Using OpenAI adapter");
+    console.log("🤖 Using OpenAI adapter");
     modelAdapter = new OpenAIAdapter({
       apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     });
+  } else if (process.env.USE_OLLAMA === "true" || process.env.OLLAMA_URL || process.env.OLLAMA_MODEL) {
+    const ollamaConfig = {
+      baseURL: process.env.OLLAMA_URL || process.env.OLLAMA_BASE_URL || "http://localhost:11434",
+      model: process.env.OLLAMA_MODEL || "llama3.2:3b",
+    };
+    console.log(`🦙 Using Ollama adapter: ${ollamaConfig.model} at ${ollamaConfig.baseURL}`);
+    modelAdapter = new OllamaAdapter(ollamaConfig);
+    
+    // Test Ollama connection
+    try {
+      const isAvailable = await (modelAdapter as OllamaAdapter).isAvailable();
+      if (!isAvailable) {
+        console.warn("⚠️  Ollama server not available. Falling back to MockAdapter.");
+        console.warn("   Make sure Ollama is running: ollama serve");
+        modelAdapter = new MockAdapter();
+      } else {
+        const models = await (modelAdapter as OllamaAdapter).listModels();
+        console.log(`✅ Ollama connected. Available models: ${models.join(", ")}`);
+        console.log(`📌 Using model: ${ollamaConfig.model}`);
+      }
+    } catch (error: any) {
+      console.warn(`⚠️  Ollama connection failed: ${error.message}`);
+      console.warn("   Falling back to MockAdapter.");
+      modelAdapter = new MockAdapter();
+    }
   } else {
-    console.log("Using Mock adapter (set OPENAI_API_KEY to use OpenAI)");
+    console.log("🎭 Using Mock adapter");
+    console.log("   Set OPENAI_API_KEY to use OpenAI, or USE_OLLAMA=true to use Ollama");
     modelAdapter = new MockAdapter();
   }
 
@@ -153,7 +179,10 @@ def run(args):
     toolEngine
   );
 
+  console.log("");
+  console.log("🔧 Initializing server...");
   await startServer({ agent, vfs, eventBus, toolEngine });
+  console.log("✅ Server initialization complete!");
 }
 
 main().catch(err => {

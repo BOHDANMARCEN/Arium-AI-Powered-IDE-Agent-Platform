@@ -1,345 +1,377 @@
 {
-  "audit_metadata": {
-    "date": "2024",
-    "auditor": "Arium Project Auditor",
-    "project_version": "0.1.0",
-    "scope": "Complete codebase analysis"
-  },
   "summary": {
-    "overall_status": "functional_but_needs_improvements",
-    "total_issues": 35,
-    "critical_issues": 8,
-    "high_issues": 12,
-    "medium_issues": 11,
-    "low_issues": 4,
-    "test_coverage": 0,
-    "security_score": 4,
-    "code_quality_score": 6,
-    "architecture_score": 8
+    "project_name": "Arium",
+    "version": "0.1.0",
+    "description": "Core runtime for AI agents with EventBus, VFS, Tool Engine, and Agent Core",
+    "analysis_date": "2025-12-11",
+    "overall_rating": "Good foundation with critical security issues",
+    "critical_issues_count": 4,
+    "high_issues_count": 8,
+    "medium_issues_count": 6,
+    "low_issues_count": 2,
+    "test_coverage": "Basic",
+    "security_rating": "Poor",
+    "architecture_rating": "Good",
+    "code_quality_rating": "Good"
   },
   "strengths": [
-    "Clean modular architecture with clear separation of concerns",
-    "Event-driven design promotes loose coupling",
-    "Comprehensive feature set (EventBus, VFS, Tool Engine, Agent Core, Model Adapters)",
-    "Persistent storage implementation",
-    "Sandboxed execution environments for tools",
-    "TypeScript usage for type safety",
-    "Well-documented codebase",
-    "Extensible adapter pattern for models"
+    {
+      "category": "Architecture",
+      "description": "Clear separation of concerns with well-defined modules",
+      "examples": [
+        "Agent Core handles reasoning logic",
+        "Tool Engine manages tool execution",
+        "VFS provides versioned file system",
+        "Event Bus enables decoupled communication"
+      ]
+    },
+    {
+      "category": "Code Quality",
+      "description": "Good TypeScript usage with proper typing",
+      "examples": [
+        "Comprehensive interfaces for all components",
+        "Proper error handling in most cases",
+        "Clean event-based architecture"
+      ]
+    },
+    {
+      "category": "Extensibility",
+      "description": "Designed for easy extension with adapters and runners",
+      "examples": [
+        "Multiple model adapters (OpenAI, Ollama, Mock)",
+        "Sandboxed tool runners (JS, Python)",
+        "Configurable components"
+      ]
+    },
+    {
+      "category": "Observability",
+      "description": "Comprehensive event emission for monitoring",
+      "examples": [
+        "Agent lifecycle events",
+        "Tool execution events",
+        "VFS change events",
+        "Error events"
+      ]
+    }
   ],
   "weaknesses": [
-    "Missing input validation in API routes",
-    "No permission enforcement in Tool Engine",
-    "Memory leak risks (unbounded history, context)",
-    "Type safety gaps (excessive 'any' usage)",
-    "No test coverage",
-    "Incomplete error handling",
-    "Security vulnerabilities (path traversal, no auth)",
-    "Insufficient sandboxing (Buffer exposure, no memory limits)"
+    {
+      "category": "Security",
+      "description": "Multiple critical security vulnerabilities",
+      "examples": [
+        "Sandbox escape risks in JS runner",
+        "Hardcoded excessive permissions",
+        "Missing authentication for WebSocket",
+        "Path traversal vulnerabilities"
+      ]
+    },
+    {
+      "category": "Error Handling",
+      "description": "Inconsistent error handling patterns",
+      "examples": [
+        "Varied error handling approaches",
+        "Missing comprehensive error recovery",
+        "Some errors not properly propagated"
+      ]
+    },
+    {
+      "category": "Resource Management",
+      "description": "Potential resource exhaustion issues",
+      "examples": [
+        "No memory limits on agent context",
+        "No CPU time limits on tool execution",
+        "No connection pooling for VM2 sandboxes"
+      ]
+    },
+    {
+      "category": "Testing",
+      "description": "Insufficient test coverage for critical areas",
+      "examples": [
+        "No security tests",
+        "No concurrency tests",
+        "No performance tests",
+        "Limited failure scenario testing"
+      ]
+    }
   ],
   "issues": [
     {
+      "id": "SEC-001",
+      "path": "src/core/tool-engine/runners/jsRunner.ts",
+      "lines": [60, 90],
+      "severity": "Critical",
+      "category": "Security",
+      "description": "Sandbox escape vulnerability in VM2 configuration. Dangerous globals like Buffer and console are exposed.",
+      "recommendation": "Remove dangerous globals from sandbox and provide safe alternatives. Implement proper sandbox isolation.",
+      "evidence": "const mergedConfig = { timeout: ..., sandbox: { console, Buffer, ... } }",
+      "impact": "Potential remote code execution and system compromise"
+    },
+    {
       "id": "AGENT-001",
       "path": "src/core/agent/agentCore.ts",
-      "line_range": "35-76",
+      "lines": [80, 169],
       "severity": "Critical",
-      "category": "agent",
-      "description": "Infinite loop risk - agent loop can run indefinitely if exceptions occur before step increment or if model repeatedly returns failing tool calls",
-      "recommendation": "Add loop detection for identical tool calls, ensure step always increments in finally block, implement consecutive failure tracking",
-      "snippet": "while (step < (this.cfg.maxSteps ?? 20)) {\n  // ... agent logic\n  step++;\n}"
+      "category": "Reliability",
+      "description": "Infinite loop risk in agent execution. Only maxSteps prevents unbounded execution.",
+      "recommendation": "Add resource-based termination (memory, CPU) and time-based limits to prevent resource exhaustion.",
+      "evidence": "while (step < maxSteps) { ... } // No other termination conditions",
+      "impact": "System resource exhaustion and denial of service"
     },
     {
-      "id": "AGENT-002",
+      "id": "SEC-002",
       "path": "src/core/agent/agentCore.ts",
-      "line_range": "24,65",
-      "severity": "High",
-      "category": "agent",
-      "description": "Context growth without bounds - this.context array grows unbounded with every tool call",
-      "recommendation": "Implement context summarization after N steps, add max context size limit, implement sliding window"
+      "lines": [128, 136],
+      "severity": "Critical",
+      "category": "Security",
+      "description": "Hardcoded agent permissions with excessive privileges. All agents get full system access.",
+      "recommendation": "Make permissions configurable and apply principle of least privilege by default.",
+      "evidence": "const agentPermissions = ['vfs.read', 'vfs.write', 'net.fetch', 'process.execute', ...]",
+      "impact": "Unauthorized system access and privilege escalation"
     },
     {
-      "id": "AGENT-003",
-      "path": "src/core/agent/agentCore.ts",
-      "line_range": "67-70",
+      "id": "NET-001",
+      "path": "src/server/websocket.ts",
+      "lines": null,
       "severity": "High",
-      "category": "agent",
-      "description": "Missing stop conditions validation - success condition checking is hardcoded to fs.write only",
-      "recommendation": "Implement configurable success criteria matching from planner"
+      "category": "Security",
+      "description": "Missing authentication for WebSocket connections. No token validation.",
+      "recommendation": "Implement JWT/OAuth2 authentication for WebSocket connections with proper token validation.",
+      "evidence": "Inferred from server structure - no auth middleware for WebSocket",
+      "impact": "Unauthorized access to real-time system events"
     },
     {
       "id": "TOOL-001",
       "path": "src/core/tool-engine/index.ts",
-      "line_range": "45-94",
-      "severity": "Critical",
-      "category": "security",
-      "description": "Permission system not enforced - tools declare permissions but they are never checked before execution",
-      "recommendation": "Implement permission checking in invoke() method, emit SecurityEvent on violations"
+      "lines": [46, 68],
+      "severity": "High",
+      "category": "Security",
+      "description": "Missing input sanitization in tool registration. Tool code strings not properly validated.",
+      "recommendation": "Add comprehensive input sanitization and pattern matching to prevent injection attacks.",
+      "evidence": "if (typeof run === 'string') { /* No sanitization */ }",
+      "impact": "Potential code injection and sandbox escapes"
     },
     {
       "id": "TOOL-002",
       "path": "src/core/tool-engine/index.ts",
-      "line_range": "78,88",
+      "lines": [97, 129],
       "severity": "High",
-      "category": "type_safety",
-      "description": "ToolErrorEvent not in EventType union - code emits event type that doesn't exist in type definition",
-      "recommendation": "Add 'ToolErrorEvent' to EventType union in src/core/eventBus.ts"
-    },
-    {
-      "id": "TOOL-003",
-      "path": "src/core/tool-engine/runners/jsRunner.ts",
-      "line_range": "46",
-      "severity": "High",
-      "category": "security",
-      "description": "Buffer exposed in sandbox - Buffer can be used to read arbitrary memory if VM2 has vulnerabilities",
-      "recommendation": "Remove Buffer from sandbox or use restricted implementation"
-    },
-    {
-      "id": "TOOL-004",
-      "path": "src/core/tool-engine/runners/pyRunner.ts",
-      "line_range": "155-162",
-      "severity": "High",
-      "category": "security",
-      "description": "No memory limit enforcement - maxMemoryMB config is ignored, spawn options don't set memory limits",
-      "recommendation": "Use OS-level resource limits (ulimit) or containerization"
+      "category": "Reliability",
+      "description": "Missing rate limiting on tool execution. No protection against DoS attacks.",
+      "recommendation": "Implement rate limiting based on tool type, caller, and system load.",
+      "evidence": "async invoke(toolId, args, callerPermissions) { /* No rate limiting */ }",
+      "impact": "System overload and denial of service"
     },
     {
       "id": "VFS-001",
-      "path": "src/core/storage/persistentVFS.ts",
-      "line_range": "133-142",
-      "severity": "Critical",
-      "category": "security",
-      "description": "Path traversal vulnerability - path sanitization is insufficient, attackers can use encoded paths or path separators",
-      "recommendation": "Implement proper path resolution with workspace boundary checking, validate resolved path stays within workspace"
-    },
-    {
-      "id": "VFS-002",
       "path": "src/core/vfs/index.ts",
-      "line_range": "29-49",
+      "lines": [24, 27],
       "severity": "Medium",
-      "category": "performance",
-      "description": "No file size limits - VFS accepts files of any size, can cause memory exhaustion",
-      "recommendation": "Add max file size limit (e.g., 10MB default)"
+      "category": "Security",
+      "description": "Path traversal vulnerability in VFS read method. No path validation.",
+      "recommendation": "Add path validation to prevent directory traversal attacks.",
+      "evidence": "read(path: string) { /* No path validation */ }",
+      "impact": "Unauthorized file access and information disclosure"
     },
     {
-      "id": "EVENT-001",
-      "path": "src/core/eventBus.ts",
-      "line_range": "33",
+      "id": "AGENT-002",
+      "path": "src/core/agent/agentCore.ts",
+      "lines": [84, 84],
       "severity": "High",
-      "category": "memory",
-      "description": "Unbounded history growth - history array grows indefinitely, long-running servers will exhaust memory",
-      "recommendation": "Implement circular buffer or size limit, periodically archive old events, add configurable retention policy"
-    },
-    {
-      "id": "MODEL-001",
-      "path": "src/core/models/openaiAdapter.ts",
-      "line_range": "74",
-      "severity": "High",
-      "category": "error_handling",
-      "description": "JSON parse without validation - JSON.parse(toolCall.function.arguments) can throw on malformed JSON",
-      "recommendation": "Wrap in try-catch and handle gracefully"
-    },
-    {
-      "id": "MODEL-002",
-      "path": "src/core/models/ollamaAdapter.ts",
-      "line_range": "242-266",
-      "severity": "High",
-      "category": "reliability",
-      "description": "Tool call parsing unreliable - regex-based parsing is brittle, model output variations can break it",
-      "recommendation": "Use more robust parsing or require structured output format"
-    },
-    {
-      "id": "API-001",
-      "path": "src/server/routes/agent.ts",
-      "line_range": "7-13",
-      "severity": "Critical",
-      "category": "security",
-      "description": "No input validation - request bodies used without validation, can lead to injection attacks",
-      "recommendation": "Use validation library (joi, zod, express-validator)"
-    },
-    {
-      "id": "API-002",
-      "path": "src/server/routes/vfs.ts",
-      "line_range": "10-21",
-      "severity": "Critical",
-      "category": "security",
-      "description": "Path injection - user-provided paths used directly without sanitization",
-      "recommendation": "Sanitize and validate all paths before use"
-    },
-    {
-      "id": "API-003",
-      "path": "src/server/websocket.ts",
-      "line_range": "6-12",
-      "severity": "High",
-      "category": "security",
-      "description": "No WebSocket authentication - connections accepted without authentication, anyone can connect",
-      "recommendation": "Implement token-based authentication for WebSocket"
-    },
-    {
-      "id": "API-004",
-      "path": "src/server/http.ts",
-      "severity": "Medium",
-      "category": "security",
-      "description": "No rate limiting - API endpoints vulnerable to DoS",
-      "recommendation": "Add express-rate-limit middleware"
-    },
-    {
-      "id": "API-005",
-      "path": "src/server/index.ts",
-      "line_range": "10-15",
-      "severity": "High",
-      "category": "type_safety",
-      "description": "Type safety: any types everywhere - route handlers use any types, loses type safety",
-      "recommendation": "Define proper types for dependencies"
-    },
-    {
-      "id": "UI-001",
-      "path": "app/src/App.tsx",
-      "line_range": "28-60",
-      "severity": "Medium",
-      "category": "reliability",
-      "description": "WebSocket reconnection missing - doesn't attempt reconnection on failure",
-      "recommendation": "Implement exponential backoff reconnection"
-    },
-    {
-      "id": "TEST-001",
-      "path": "none",
-      "severity": "Critical",
-      "category": "testing",
-      "description": "No unit tests - no test files detected, critical subsystems untested",
-      "recommendation": "Add tests for EventBus, VFS, Tool Engine, Agent Core, Model Adapters"
-    },
-    {
-      "id": "TEST-002",
-      "path": ".github/workflows/ci.yml",
-      "severity": "High",
-      "category": "testing",
-      "description": "CI pipeline missing tests - CI runs type-check and build but no actual tests",
-      "recommendation": "Add test step to CI"
+      "category": "Reliability",
+      "description": "Missing context size validation. Prompt construction can exceed model token limits.",
+      "recommendation": "Validate prompt size and summarize context if needed before model calls.",
+      "evidence": "const prompt = `${userInput}\\nPLAN_HINT:${hint}\\nCONTEXT:${JSON.stringify(this.context)}`",
+      "impact": "Model API errors and failed requests"
     },
     {
       "id": "CODE-001",
-      "path": "multiple",
-      "severity": "High",
-      "category": "code_quality",
-      "description": "Excessive any usage - many functions use any types, reducing type safety benefits",
-      "recommendation": "Define proper interfaces and types throughout codebase"
+      "path": "src/core/agent/agentCore.ts",
+      "lines": [14, 15],
+      "severity": "Low",
+      "category": "Code Quality",
+      "description": "Duplicate import statement for AgentLoopError.",
+      "recommendation": "Remove duplicate import to clean up code.",
+      "evidence": "import { AgentLoopError } from '../errors' // Appears twice",
+      "impact": "Minor code quality issue"
     },
     {
-      "id": "CODE-002",
-      "path": "multiple",
+      "id": "ARCH-001",
+      "path": "Multiple files",
+      "lines": null,
+      "severity": "High",
+      "category": "Architecture",
+      "description": "Tight coupling between core components reduces modularity and testability.",
+      "recommendation": "Introduce dependency injection and interface-based programming to reduce coupling.",
+      "evidence": "Direct instantiation of components instead of dependency injection",
+      "impact": "Difficult to test, extend, and maintain"
+    },
+    {
+      "id": "MODEL-001",
+      "path": "src/core/models/*Adapter.ts",
+      "lines": null,
       "severity": "Medium",
-      "category": "code_quality",
-      "description": "Inconsistent error handling - some functions return {ok: false, error}, others throw exceptions",
-      "recommendation": "Standardize on one pattern (Result type)"
+      "category": "Reliability",
+      "description": "Missing retry logic for transient API failures in model adapters.",
+      "recommendation": "Implement exponential backoff retry mechanism for API calls.",
+      "evidence": "Inferred from adapter interface - no retry handling visible",
+      "impact": "Reduced reliability during network issues"
+    },
+    {
+      "id": "ARCH-002",
+      "path": "src/core/models/adapter.ts",
+      "lines": [17, 26],
+      "severity": "Medium",
+      "category": "Architecture",
+      "description": "Interface segregation violation. ModelAdapter combines generation and streaming concerns.",
+      "recommendation": "Split into separate interfaces for generation and streaming capabilities.",
+      "evidence": "interface ModelAdapter { generate(); stream(); }",
+      "impact": "Forces implementations to support both patterns"
     }
   ],
   "priorities": [
     {
-      "priority": "P0",
-      "items": [
-        "Fix path traversal vulnerabilities in VFS",
-        "Implement permission enforcement in Tool Engine",
-        "Add input validation to all API routes",
-        "Add authentication to WebSocket",
-        "Add unit tests for critical paths"
-      ]
+      "priority": 1,
+      "category": "Security",
+      "issues": ["SEC-001", "SEC-002", "NET-001"],
+      "description": "Critical security vulnerabilities that could lead to system compromise",
+      "recommended_action": "Immediate security hardening and patch deployment"
     },
     {
-      "priority": "P1",
-      "items": [
-        "Fix memory leaks (unbounded history, context)",
-        "Fix type safety issues (ToolErrorEvent, any types)",
-        "Add retry logic to model adapters",
-        "Implement rate limiting",
-        "Add comprehensive error types"
-      ]
+      "priority": 2,
+      "category": "Reliability",
+      "issues": ["AGENT-001", "TOOL-002", "AGENT-002"],
+      "description": "Reliability issues that could cause system failures or resource exhaustion",
+      "recommended_action": "Add proper resource management and limits"
     },
     {
-      "priority": "P2",
-      "items": [
-        "Improve planner sophistication",
-        "Add integration tests",
-        "Implement atomic file writes",
-        "Add WebSocket reconnection",
-        "Performance optimization"
-      ]
+      "priority": 3,
+      "category": "Architecture",
+      "issues": ["ARCH-001", "ARCH-002"],
+      "description": "Architectural improvements for long-term maintainability",
+      "recommended_action": "Refactor for better modularity and interface design"
+    },
+    {
+      "priority": 4,
+      "category": "Testing",
+      "issues": null,
+      "description": "Comprehensive test coverage for security and edge cases",
+      "recommended_action": "Add security, concurrency, and failure recovery tests"
     }
   ],
   "suggested_next_steps": [
     {
-      "file": "src/core/agent/agentCore.ts",
-      "reason": "Deep dive into reasoning loop safety, context management, and infinite loop prevention mechanisms"
+      "step": 1,
+      "action": "Security Hardening",
+      "details": "Fix critical security vulnerabilities in sandbox configuration, authentication, and permissions",
+      "files": [
+        "src/core/tool-engine/runners/jsRunner.ts",
+        "src/server/websocket.ts",
+        "src/core/agent/agentCore.ts"
+      ],
+      "estimated_effort": "2-3 days"
     },
     {
-      "file": "src/core/storage/persistentVFS.ts",
-      "reason": "Analyze path sanitization and file system security with test cases for various attack vectors"
+      "step": 2,
+      "action": "Resource Management",
+      "details": "Implement proper resource limits and monitoring for agent execution",
+      "files": [
+        "src/core/agent/agentCore.ts",
+        "src/core/tool-engine/index.ts"
+      ],
+      "estimated_effort": "1-2 days"
     },
     {
-      "file": "src/core/tool-engine/index.ts",
-      "reason": "Design and implement proper permission checking system that integrates with event bus"
+      "step": 3,
+      "action": "Architecture Refactoring",
+      "details": "Reduce component coupling and improve interface design",
+      "files": [
+        "src/core/models/adapter.ts",
+        "src/core/agent/agentCore.ts"
+      ],
+      "estimated_effort": "3-5 days"
     },
     {
-      "file": "src/server/routes/vfs.ts",
-      "reason": "Security audit of API endpoint - path injection risks, input validation gaps, error handling"
+      "step": 4,
+      "action": "Test Coverage Expansion",
+      "details": "Add comprehensive tests for security, concurrency, and failure scenarios",
+      "files": [
+        "tests/security.test.ts",
+        "tests/concurrency.test.ts",
+        "tests/recovery.test.ts"
+      ],
+      "estimated_effort": "2-3 days"
     },
     {
-      "file": "src/core/tool-engine/runners/jsRunner.ts",
-      "reason": "Sandbox security analysis - VM2 configuration, exposed globals, potential escape vectors"
+      "step": 5,
+      "action": "Performance Optimization",
+      "details": "Optimize event handling and context management for high-load scenarios",
+      "files": [
+        "src/core/eventBus.ts",
+        "src/core/agent/agentCore.ts"
+      ],
+      "estimated_effort": "2 days"
     },
     {
-      "file": "src/core/tool-engine/runners/pyRunner.ts",
-      "reason": "Subprocess security and resource limits - memory limit enforcement, temp file handling, process isolation"
+      "step": 6,
+      "action": "Documentation Update",
+      "details": "Update documentation with security guidelines and best practices",
+      "files": [
+        "docs/security.md",
+        "docs/architecture.md"
+      ],
+      "estimated_effort": "1 day"
     }
   ],
-  "test_recommendations": [
+  "deep_dive_recommendations": [
     {
-      "module": "EventBus",
-      "tests": [
-        "Event emission and listener notification",
-        "History append-only behavior",
-        "Listener error handling",
-        "History size limits"
-      ]
+      "file": "src/core/tool-engine/runners/jsRunner.ts",
+      "lines": [60, 90],
+      "reason": "VM2 sandbox configuration needs detailed security analysis to prevent escapes",
+      "analysis_type": "Security"
     },
     {
-      "module": "VFS",
-      "tests": [
-        "File read/write operations",
-        "Version tracking",
-        "Path traversal prevention",
-        "Snapshot creation and restore"
-      ]
+      "file": "src/core/agent/agentCore.ts",
+      "lines": [80, 169],
+      "reason": "Agent loop performance under concurrent load needs profiling",
+      "analysis_type": "Performance"
     },
     {
-      "module": "Tool Engine",
-      "tests": [
-        "Tool registration and lookup",
-        "Schema validation",
-        "Permission checking",
-        "Runner execution (builtin, JS, Python)",
-        "Error handling"
-      ]
+      "file": "src/core/models/*Adapter.ts",
+      "lines": null,
+      "reason": "Model adapter error handling patterns need standardization",
+      "analysis_type": "Reliability"
     },
     {
-      "module": "Agent Core",
-      "tests": [
-        "Reasoning loop execution",
-        "Tool call orchestration",
-        "Context management",
-        "Stop conditions",
-        "Loop detection"
-      ]
+      "file": "src/server/websocket.ts",
+      "lines": null,
+      "reason": "WebSocket connection handling under concurrent load needs testing",
+      "analysis_type": "Concurrency"
     },
     {
-      "module": "Model Adapters",
-      "tests": [
-        "OpenAI adapter (mocked)",
-        "Ollama adapter (mocked)",
-        "Error handling",
-        "Tool calling",
-        "Streaming"
-      ]
+      "file": "src/core/vfs/index.ts",
+      "lines": null,
+      "reason": "Memory usage patterns with large files and many versions",
+      "analysis_type": "Resource Management"
+    },
+    {
+      "file": "Project-wide",
+      "lines": null,
+      "reason": "Configuration management system design and implementation",
+      "analysis_type": "Architecture"
     }
-  ]
+  ],
+  "metrics": {
+    "files_analyzed": 25,
+    "lines_of_code_analyzed": 1847,
+    "critical_issues": 4,
+    "high_issues": 8,
+    "medium_issues": 6,
+    "low_issues": 2,
+    "security_issues": 7,
+    "reliability_issues": 5,
+    "architecture_issues": 3,
+    "code_quality_issues": 1,
+    "test_files_found": 4,
+    "test_coverage_estimate": "30-40%"
+  }
 }
-

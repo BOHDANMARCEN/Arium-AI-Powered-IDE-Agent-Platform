@@ -108,11 +108,69 @@ export function createHttpServer(deps: any) {
     next();
   });
 
+  // Root route - API info
+  app.get("/", (req, res) => {
+    const port = process.env.PORT ? parseInt(process.env.PORT) : 4000;
+    const host = req.get("host")?.split(":")[0] || "localhost";
+    
+    res.json({
+      name: "Arium API",
+      version: "0.1.0",
+      status: "running",
+      server: {
+        host,
+        port,
+        http: `http://${host}:${port}`,
+        websocket: `ws://${host}:${port}`,
+      },
+      endpoints: {
+        root: "/",
+        health: "/health",
+        agent: "/agent",
+        vfs: "/vfs",
+        events: "/events",
+        tools: "/tools",
+      },
+      examples: {
+        listTools: `GET http://${host}:${port}/tools/list`,
+        listFiles: `GET http://${host}:${port}/vfs/list`,
+        runAgent: `POST http://${host}:${port}/agent/run`,
+        healthCheck: `GET http://${host}:${port}/health`,
+      },
+      documentation: "See README.md for API documentation",
+    });
+  });
+
+  // Health check endpoint
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // register route modules
   app.use("/agent", deps.routes.agent);
   app.use("/vfs", deps.routes.vfs);
   app.use("/events", deps.routes.events);
   app.use("/tools", deps.routes.tools);
+
+  // 404 handler
+  app.use((req, res) => {
+    res.status(404).json({
+      error: "Not found",
+      message: `Route ${req.method} ${req.path} not found`,
+      availableEndpoints: [
+        "GET /",
+        "GET /health",
+        "POST /agent/run",
+        "GET /vfs/list",
+        "GET /vfs/read",
+        "POST /vfs/write",
+        "DELETE /vfs/delete",
+        "GET /events",
+        "GET /tools/list",
+        "POST /tools/invoke",
+      ],
+    });
+  });
 
   return app;
 }

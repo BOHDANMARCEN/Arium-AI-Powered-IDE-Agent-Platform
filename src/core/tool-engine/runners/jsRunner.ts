@@ -93,7 +93,7 @@ export class JSRunner {
               return await run(args);
             }
             
-            throw new Error('No valid export found. Expected: export default async function run(args) {...} or function run(args) {...}');
+            throw new Error('No valid function found. Expected: async function run(args) {...} or function run(args) {...}');
           })()
         `;
 
