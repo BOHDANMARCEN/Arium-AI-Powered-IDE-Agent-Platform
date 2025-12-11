@@ -59,9 +59,9 @@ export class VFS {
 
   diff(versionA: string | null, versionB: string | null) {
     // very simple diff: return list of changed files and sizes
-    const a = versionA && this.versions.get(versionA);
-    const b = versionB && this.versions.get(versionB);
-    if (!a && !b) return [];
+    const a = versionA ? this.versions.get(versionA) : null;
+    const b = versionB ? this.versions.get(versionB) : null;
+    if (!a && !b) return { a: null, b: null };
     // For demo, return minimal info:
     return { a: a?.id ?? null, b: b?.id ?? null };
   }

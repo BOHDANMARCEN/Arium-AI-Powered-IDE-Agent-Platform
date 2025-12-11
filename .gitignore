@@ -1,24 +1,28 @@
 # Dependencies
 node_modules/
-.pnp
-.pnp.js
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
-# Testing
-coverage/
-*.log
-
-# Production
+# Build output
 dist/
 build/
-*.local
+*.tsbuildinfo
 
 # Environment variables
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env*.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Workspace
+workspace/
 
 # IDE
 .vscode/
@@ -31,27 +35,22 @@ build/
 .DS_Store
 Thumbs.db
 
-# Workspace
-workspace/
-*.workspace
-
-# Python (if using py-runner)
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
 venv/
 env/
 ENV/
 
-# TypeScript
-*.tsbuildinfo
+# React build
+app/build/
+app/.env.local
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Testing
+coverage/
+.nyc_output/
 
+# Temporary files
+*.tmp
+*.temp

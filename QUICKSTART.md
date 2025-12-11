@@ -1,245 +1,290 @@
-# Arium Core — Quick Start Guide
+# Arium Quick Start Guide
 
-Цей документ описує як запустити базову реалізацію Arium Core локально.
+**Version:** 0.1.0
 
-## Передумови
+Quick guide to get started with Arium AI IDE & Agent Platform.
 
-- Node.js 18+ 
-- npm або pnpm
+---
 
-## Встановлення
+## Prerequisites
 
-1. Встанови залежності:
+- **Node.js** 18+ ([download](https://nodejs.org/))
+- **npm** or **pnpm**
+- **Python 3.10+** (optional, for Python runner)
+- **Ollama** (optional, for local models)
+
+---
+
+## Installation
+
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/BOHDANMARCEN/Arium-AI-Powered-IDE-Agent-Platform.git
+cd Arium-AI-Powered-IDE-Agent-Platform
+```
+
+### 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
-2. Налаштуй конфігурацію (опціонально):
+### 3. Configure Environment
 
-Створи файл `.env` на основі `.env.example`:
+Copy the example environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Відредагуй `.env` та додай свій OpenAI API key (якщо хочеш використовувати OpenAI):
+Edit `.env` with your settings:
 
 ```env
-OPENAI_API_KEY=sk-your-key-here
+# For OpenAI (optional)
+OPENAI_API_KEY=sk-xxxx
+
+# For Ollama (optional)
+USE_OLLAMA=true
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama2
+
+# Server
+PORT=4000
+
+# Storage
 PERSISTENT_STORAGE=true
+WORKSPACE_PATH=./workspace
+PROJECT_ID=default
 ```
 
-## Запуск
+---
 
-### Режим розробки (з автоматичним перезапуском)
+## Running Arium
+
+### Option 1: Development Mode (Recommended)
 
 ```bash
 npm run dev
 ```
 
-Це запустить сервер на `http://localhost:4000` з:
-- REST API ендпоінтами
-- WebSocket сервером для real-time подій
+This starts the server with hot-reload.
 
-### Побудова та запуск production версії
+### Option 2: Using CLI
+
+```bash
+npm run cli serve
+```
+
+### Option 3: Production Build
 
 ```bash
 npm run build
 npm start
 ```
 
-## Структура проєкту
+---
 
-```
-src/
-├── core/
-│   ├── eventBus.ts        # Event Bus з append-only history
-│   ├── vfs/
-│   │   └── index.ts       # In-memory VFS з версіями та snapshots
-│   ├── tool-engine/
-│   │   └── index.ts       # Реєстрація та виконання тулів з валідацією
-│   ├── models/
-│   │   └── mockAdapter.ts # Mock LLM adapter (для dev/testing)
-│   └── agent/
-│       ├── planner.ts     # Rule-based planner
-│       └── agentCore.ts   # Reasoning loop з підтримкою tool calls
-├── server/
-│   ├── http.ts            # REST API сервер (Express)
-│   ├── websocket.ts       # WebSocket сервер для real-time подій
-│   ├── routes/
-│   │   ├── agent.ts       # Маршрути для агентів
-│   │   ├── vfs.ts         # Маршрути для VFS
-│   │   ├── events.ts      # Маршрути для подій
-│   │   └── tools.ts       # Маршрути для тулів
-│   └── index.ts           # Bootstrap сервера
-└── index.ts               # Головна точка входу: ініціалізація core + сервер
-```
+## Quick Test
 
-## Як працює система
-
-`src/index.ts` ініціалізує всю систему:
-
-1. Створює EventBus, VFS, ToolEngine
-2. Реєструє вбудовані інструменти (`fs.read`, `fs.write`)
-3. Створює агента з mock моделью
-4. Запускає сервер з REST API та WebSocket
-
-## API Endpoints
-
-### REST API
-
-| Метод  | URL                  | Опис             |
-| ------ | -------------------- | ---------------- |
-| `POST` | `/agent/run`         | Запустити агента |
-| `GET`  | `/vfs/list`          | Список файлів    |
-| `GET`  | `/vfs/read?path=...` | Прочитати файл   |
-| `POST` | `/vfs/write`         | Записати файл    |
-| `GET`  | `/events/history`    | Історія EventBus |
-| `GET`  | `/tools/list`        | Список тулів     |
-| `POST` | `/tools/invoke`      | Виклик тулза     |
-
-### WebSocket
-
-```
-ws://localhost:4000
-```
-
-Підключення до WebSocket отримує всі події EventBus в реальному часі:
-
-```json
-{
-  "type": "event",
-  "event": {
-    "id": "...",
-    "type": "AgentStartEvent",
-    "timestamp": 1234567890,
-    "payload": { ... }
-  }
-}
-```
-
-## Приклади використання API
-
-### Запуск агента
+### 1. Start Server
 
 ```bash
-curl -X POST http://localhost:4000/agent/run \
-  -H "Content-Type: application/json" \
-  -d '{"input": "Please read file src/main.ts (CALL: fs.read)"}'
+npm run dev
 ```
 
-### Список файлів
-
-```bash
-curl http://localhost:4000/vfs/list
-```
-
-### Читання файлу
-
-```bash
-curl "http://localhost:4000/vfs/read?path=src/main.ts"
-```
-
-### Запис файлу
-
-```bash
-curl -X POST http://localhost:4000/vfs/write \
-  -H "Content-Type: application/json" \
-  -d '{"path": "test.txt", "content": "Hello, Arium!"}'
-```
-
-### Історія подій
-
-```bash
-curl http://localhost:4000/events/history
-```
-
-## Розширення системи
-
-### Security / Sandboxing
-
-Зараз runners виконуються в поточному процесі. Для production:
-
-- Додай VM2 або Deno isolate для JS runners
-- Запускай Python/Node runners у контейнерах або окремих процесах
-- Додай обмеження пам'яті та часу виконання
-
-### Model Adapters
-
-Заміни `MockAdapter` на реальні адаптери:
-
-- OpenAI API
-- Ollama (локальні моделі)
-- TGI servers
-- Custom HTTP endpoints
-
-Реалізуй методи `generate()` та `stream()` згідно інтерфейсу.
-
-### Persistence
-
-✅ **Persistent Storage вже реалізовано!**
-
-Система автоматично зберігає:
-- Події EventBus у `workspace/<project>/history.log`
-- Файли VFS у `workspace/<project>/files/`
-- Версії файлів у `workspace/<project>/versions/`
-- Snapshots у `workspace/<project>/snapshots/`
-
-Для вимкнення persistent storage (in-memory mode):
-```env
-PERSISTENT_STORAGE=false
-```
-
-### Тестування
-
-Додай unit tests для:
-
-- `ToolEngine.invoke()`
-- `VFS.write/read()`
-- Agent flows
-
-### Frontend Integration
-
-Інтегруй з UI через:
-
-- WebSocket підключення до EventBus
-- Local IPC
-- UI підписка на `AgentStepEvent`, `ToolResultEvent`, `VFSChangeEvent`
-
-### Type Safety
-
-Розшир типи та контракти:
-
-- JSON schemas для тулів
-- Type-safe event envelopes
-- Contract validation
-
-## Приклад використання
-
-Після запуску `npm run dev` ти побачиш:
-
+You should see:
 ```
 🚀 Arium server running at http://localhost:4000
-📡 WebSocket available at ws://localhost:4000
-[EVENT] AgentStartEvent ...
-[EVENT] AgentStepEvent ...
-[EVENT] ModelResponseEvent ...
-[EVENT] ToolInvocationEvent ...
-[EVENT] ToolResultEvent ...
 ```
 
-Всі події автоматично транслюються через WebSocket для UI в реальному часі!
+### 2. Test API
 
-## Наступні кроки
+```bash
+# List tools
+curl http://localhost:4000/tools/list
 
-1. Заміни MockAdapter на реальний LLM adapter
-2. Додай більше вбудованих інструментів
-3. Реалізуй persistence для history та VFS
-4. Додай sandboxing для безпеки
-5. Інтегруй з UI Shell
+# List files
+curl http://localhost:4000/vfs/list
+
+# Run agent (example)
+curl -X POST http://localhost:4000/agent/run \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Create a hello world file"}'
+```
 
 ---
 
-**Приємної розробки! 🚀**
+## Using the UI Shell
 
+### 1. Start Backend
+
+```bash
+npm run dev
+```
+
+### 2. Start UI (in another terminal)
+
+```bash
+cd app
+npm install
+npm start
+```
+
+The UI will open at `http://localhost:3000` and connect to the backend.
+
+---
+
+## Using Ollama (Local Models)
+
+### 1. Install Ollama
+
+**macOS/Linux:**
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+**Windows:** Download from [ollama.ai](https://ollama.ai/download)
+
+### 2. Start Ollama
+
+```bash
+ollama serve
+```
+
+### 3. Download Model
+
+```bash
+ollama pull llama2
+```
+
+### 4. Configure Arium
+
+In `.env`:
+```env
+USE_OLLAMA=true
+OLLAMA_MODEL=llama2
+```
+
+### 5. Start Arium
+
+```bash
+npm run dev
+```
+
+---
+
+## CLI Commands
+
+### Start Server
+
+```bash
+npm run cli serve -p 4000
+```
+
+### List Tools
+
+```bash
+npm run cli tools
+```
+
+### Initialize Project
+
+```bash
+npm run cli init my-project
+```
+
+### Show Version
+
+```bash
+npm run cli version
+```
+
+---
+
+## Project Structure
+
+```
+arium/
+├── src/              # Core implementation
+│   ├── core/         # Core engines
+│   ├── server/       # API server
+│   └── cli/          # CLI interface
+├── app/              # UI Shell (React)
+├── docs/             # Documentation
+└── workspace/        # Project workspace (auto-created)
+```
+
+---
+
+## Next Steps
+
+1. **Read Documentation:**
+   - [Architecture](./docs/architecture.md)
+   - [API Documentation](./docs/server-api.md)
+   - [Tool Engine](./docs/tool-engine.md)
+
+2. **Try Examples:**
+   - Create custom tools
+   - Run agent tasks
+   - Explore the UI
+
+3. **Extend:**
+   - Add custom model adapters
+   - Create new tools
+   - Build plugins
+
+---
+
+## Troubleshooting
+
+### Port Already in Use
+
+```bash
+# Use different port
+PORT=8080 npm run dev
+```
+
+### Ollama Not Found
+
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/api/tags
+
+# Start Ollama
+ollama serve
+```
+
+### Python Runner Not Working
+
+Ensure Python 3.10+ is installed:
+```bash
+python3 --version
+```
+
+### Build Errors
+
+```bash
+# Clean and rebuild
+rm -rf dist node_modules
+npm install
+npm run build
+```
+
+---
+
+## Getting Help
+
+- **GitHub Issues**: [Report problems](https://github.com/BOHDANMARCEN/Arium-AI-Powered-IDE-Agent-Platform/issues)
+- **Documentation**: See `docs/` folder
+- **Examples**: Check code examples in source
+
+---
+
+## License
+
+Apache-2.0
+
+---
+
+Happy coding with Arium! 🚀
