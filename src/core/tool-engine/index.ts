@@ -281,6 +281,71 @@ export class ToolEngine {
     return t.run(args, { eventBus: this.eventBus });
   }
 
+  /**
+   * Enhanced tool execution with sandbox telemetry
+   */
+  async invokeWithTelemetry(
+    toolId: string,
+    args: Record<string, unknown>,
+    caller?: { id?: string; permissions?: Permission[] }
+  ): Promise<ToolExecutionResult> {
+    const startTime = Date.now();
+    const startMemory = process.memoryUsage();
+
+    // Start CPU measurement
+    const startCpuUsage = process.cpuUsage();
+
+    try {
+      const result = await this.invoke(toolId, args, caller);
+
+      // Calculate metrics
+      const endTime = Date.now();
+      const endMemory = process.memoryUsage();
+      const endCpuUsage = process.cpuUsage(startCpuUsage);
+
+      const executionTime = endTime - startTime;
+      const memoryUsed = endMemory.heapUsed - startMemory.heapUsed;
+      const cpuTime = (endCpuUsage.user + endCpuUsage.system) / 1000;
+
+      // Emit telemetry event
+      this.eventBus.emit("ToolExecutionEvent", {
+        toolId,
+        executionTime,
+        memoryUsed,
+        cpuTime,
+        success: result.ok,
+        error: result.ok ? undefined : result.error,
+        timestamp: endTime,
+      });
+
+      return result;
+    } catch (error) {
+      const endTime = Date.now();
+      const endMemory = process.memoryUsage();
+      const endCpuUsage = process.cpuUsage(startCpuUsage);
+
+      const executionTime = endTime - startTime;
+      const memoryUsed = endMemory.heapUsed - startMemory.heapUsed;
+      const cpuTime = (endCpuUsage.user + endCpuUsage.system) / 1000;
+
+      // Emit error telemetry event
+      this.eventBus.emit("ToolExecutionEvent", {
+        toolId,
+        executionTime,
+        memoryUsed,
+        cpuTime,
+        success: false,
+        error: {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+        },
+        timestamp: endTime,
+      });
+
+      throw error;
+    }
+  }
+
   list() {
     return Array.from(this.tools.values()).map(x => x.def);
   }

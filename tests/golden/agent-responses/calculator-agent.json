@@ -1,0 +1,22 @@
+{
+  "input": "Create a simple calculator function",
+  "steps": [
+    {
+      "type": "reasoning",
+      "content": "I need to create a calculator function with basic operations"
+    },
+    {
+      "type": "tool_call",
+      "tool": "fs.write",
+      "args": {
+        "path": "calculator.js",
+        "content": "function calculator(a, b, op) {\n  switch(op) {\n    case '+': return a + b;\n    case '-': return a - b;\n    case '*': return a * b;\n    case '/': return a / b;\n    default: throw new Error('Unknown operation');\n  }\n}"
+      }
+    },
+    {
+      "type": "response",
+      "content": "Calculator function created successfully"
+    }
+  ],
+  "finalResult": "Function written to calculator.js"
+}

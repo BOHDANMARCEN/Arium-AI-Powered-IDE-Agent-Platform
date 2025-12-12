@@ -1,0 +1,14 @@
+{
+  "toolId": "fs.read",
+  "args": {
+    "path": "example.txt"
+  },
+  "result": {
+    "ok": true,
+    "data": "This is the content of example.txt\nWith multiple lines"
+  },
+  "executionTime": 45,
+  "permissions": [
+    "vfs.read"
+  ]
+}

@@ -159,10 +159,8 @@ describe("Agent Loop Safety", () => {
     );
 
     let contextSummarized = false;
-    eventBus.on("AgentStepEvent", (evt) => {
-      if (evt.payload.action === "context_summarized") {
-        contextSummarized = true;
-      }
+    eventBus.on("context_summarized", (evt) => {
+      contextSummarized = true;
     });
 
     await agent.run("test");

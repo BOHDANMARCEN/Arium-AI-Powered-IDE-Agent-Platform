@@ -6,6 +6,14 @@
 
 import { ulid } from "ulid";
 
+export interface ContextSummarizedEvent {
+  type: "context_summarized";
+  payload: {
+    summary: string;
+    removedMessages: number;
+  };
+}
+
 export type EventType =
   | "PromptEvent"
   | "ModelResponseEvent"
@@ -13,14 +21,21 @@ export type EventType =
   | "ToolResultEvent"
   | "ToolErrorEvent"
   | "ToolExecutionEvent"
+  | "ToolExecutionMetrics"
+  | "ModelExecutionMetrics"
   | "VFSChangeEvent"
   | "AgentStartEvent"
   | "AgentStepEvent"
   | "AgentFinishEvent"
   | "SecurityEvent"
   | "ModelErrorEvent"
-  | "EventArchiveEvent" // New event type for archival
-  | "AgentEmergencyStopEvent"; // Emergency stop event (Phase 2.3)
+  | "EventArchiveEvent"
+  | "AgentEmergencyStopEvent"
+  | "SandboxViolationEvent"
+  | "ContextCompressionEvent"
+  | "StopConditionTriggered"
+  | "DebugMetricsEvent"
+  | "context_summarized";
 
 export interface EventEnvelope<T = unknown> {
   id: string;
@@ -171,7 +186,7 @@ export class EventBus {
    * Get history with optional filtering
    */
   getHistory<T = unknown>(options?: { since?: number; limit?: number; type?: EventType }): EventEnvelope<T>[] {
-    let filtered = this.history;
+    let filtered = this.history as EventEnvelope<T>[];
 
     if (options?.since) {
       filtered = filtered.filter((e) => e.timestamp >= options.since!);
@@ -219,4 +234,3 @@ export class EventBus {
     };
   }
 }
-

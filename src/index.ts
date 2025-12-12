@@ -12,9 +12,12 @@ import { AgentCore } from "./core/agent/agentCore";
 import { MockAdapter } from "./core/models/mockAdapter";
 import { OpenAIAdapter } from "./core/models/openaiAdapter";
 import { OllamaAdapter } from "./core/models/ollamaAdapter";
+import { ModelManager } from "./core/models/modelManager";
 
 import { startServer } from "./server/index";
 import { registerBuiltinTools } from "./core/tools/builtinTools";
+import { initializeLogger, logger } from "./core/logger";
+import { parseLogLevel, parseLogFormat } from "./core/logger/config";
 
 async function main() {
   // Configuration
@@ -54,9 +57,25 @@ async function main() {
     vfs = new VFS(eventBus);
   }
 
-  // simple logging listener
-  eventBus.on("any", evt => {
-    console.log(`[EVENT] ${evt.type} ${evt.id} ${new Date(evt.timestamp).toISOString()}`);
+  // Initialize logger with Pino
+  const logLevel = parseLogLevel(process.env.LOG_LEVEL);
+  const logFormat = parseLogFormat(process.env.LOG_FORMAT);
+
+  const loggerInstance = initializeLogger(eventBus, {
+    level: logLevel,
+    format: logFormat,
+    file: {
+      enabled: process.env.LOG_FILE_ENABLED === "true",
+      path: process.env.LOG_FILE_PATH || "./logs/arium.log",
+    },
+  });
+
+  logger.info("🚀 Starting Arium AI IDE Platform", {
+    workspacePath,
+    projectId,
+    usePersistentStorage,
+    logLevel,
+    logFormat,
   });
 
   const toolEngine = new ToolEngine(eventBus);
@@ -168,10 +187,15 @@ def run(args):
     modelAdapter = new MockAdapter();
   }
 
+  // Initialize ModelManager for AI completion
+  const modelManager = new ModelManager();
+  // For now, ModelManager uses its own Ollama adapter
+  // TODO: Integrate with the main modelAdapter
+
   const agent = new AgentCore(
     {
       id: "default-agent",
-      model: modelAdapter,
+      model: modelAdapter as any, // TODO: Unify model adapter interfaces
       temperature: 0.0,
       maxTokens: 2048,
     },
@@ -181,7 +205,7 @@ def run(args):
 
   console.log("");
   console.log("🔧 Initializing server...");
-  await startServer({ agent, vfs, eventBus, toolEngine });
+  await startServer({ agent, vfs, eventBus, toolEngine, modelManager });
   console.log("✅ Server initialization complete!");
 }
 

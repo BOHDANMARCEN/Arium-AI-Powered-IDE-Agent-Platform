@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+/**
+ * Arium CLI Entry Point
+ *
+ * Author: Bogdan Marcen & ChatGPT 5.1
+ */
+
+require('../dist/cli/index.js');

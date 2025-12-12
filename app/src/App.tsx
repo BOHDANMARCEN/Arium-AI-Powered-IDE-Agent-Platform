@@ -5,12 +5,29 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import { CodeEditor } from './components/CodeEditor';
 
 interface Event {
   id: string;
   type: string;
   timestamp: number;
   payload: any;
+}
+
+function getLanguageFromPath(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'ts': return 'typescript';
+    case 'tsx': return 'typescript';
+    case 'js': return 'javascript';
+    case 'jsx': return 'javascript';
+    case 'py': return 'python';
+    case 'json': return 'json';
+    case 'md': return 'markdown';
+    case 'css': return 'css';
+    case 'html': return 'html';
+    default: return 'plaintext';
+  }
 }
 
 function App() {
@@ -131,11 +148,11 @@ function App() {
           <div className="editor-toolbar">
             <h3>{currentFile || 'No file selected'}</h3>
           </div>
-          <textarea
-            className="editor"
+          <CodeEditor
             value={fileContent}
-            onChange={(e) => setFileContent(e.target.value)}
-            placeholder="Select a file to edit..."
+            onChange={setFileContent}
+            path={currentFile}
+            language={getLanguageFromPath(currentFile)}
           />
         </div>
 
@@ -179,4 +196,3 @@ function App() {
 }
 
 export default App;
-

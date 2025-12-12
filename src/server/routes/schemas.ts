@@ -59,3 +59,15 @@ export const ToolInvokeSchema = z
   })
   .strict();
 
+// Model completion request - strict validation
+export const ModelCompleteSchema = z
+  .object({
+    path: PathSchema.optional(),
+    code: z.string().max(100 * 1024), // 100KB max code
+    position: z.object({
+      line: z.number().min(0),
+      column: z.number().min(0),
+    }),
+    language: z.string().optional(),
+  })
+  .strict();

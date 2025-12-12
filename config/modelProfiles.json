@@ -1,0 +1,38 @@
+{
+  "fast": {
+    "modelName": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 4096,
+    "safetySettings": {
+      "harmfulContentThreshold": "block_some",
+      "sensitiveContentThreshold": "allow_some"
+    }
+  },
+  "smart": {
+    "modelName": "gpt-4",
+    "temperature": 0.9,
+    "max_tokens": 8192,
+    "safetySettings": {
+      "harmfulContentThreshold": "block_most",
+      "sensitiveContentThreshold": "allow_some"
+    }
+  },
+  "cheap": {
+    "modelName": "gpt-3.5-turbo",
+    "temperature": 0.5,
+    "max_tokens": 2048,
+    "safetySettings": {
+      "harmfulContentThreshold": "block_some",
+      "sensitiveContentThreshold": "allow_none"
+    }
+  },
+  "secure": {
+    "modelName": "gpt-4",
+    "temperature": 0.3,
+    "max_tokens": 4096,
+    "safetySettings": {
+      "harmfulContentThreshold": "block_all",
+      "sensitiveContentThreshold": "allow_none"
+    }
+  }
+}
