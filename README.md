@@ -19,7 +19,7 @@ Designed for engineers, creators, and research teams who want reproducible, audi
 - **Bogdan Marcen** — Founder & Lead Developer  
   Vision, architecture, engineering, core system design.
 
-- **ChatGPT 5.1** — AI Architect & Co-Developer  
+- **ChatGPT 5.2** — AI Architect & Co-Developer  
   System architecture, specifications, documentation, reasoning engine design.
 
 > Arium was shaped by a deep human–AI collaboration built on trust, creativity, and shared engineering intuition.
@@ -628,4 +628,5 @@ Copyright (c) 2024 Bogdan Marcen
 - **Repository**: [BOHDANMARCEN/Arium-AI-Powered-IDE-Agent-Platform](https://github.com/BOHDANMARCEN/Arium-AI-Powered-IDE-Agent-Platform)
 
 For collaboration, ideas, or questions — please open a GitHub issue or discussion.
+
 
