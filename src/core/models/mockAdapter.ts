@@ -1,30 +1,42 @@
 /**
  * Mock model adapter for local dev.
- * - when prompt asks for tool call, returns a structured object
- * - otherwise returns text
- *
- * Replace with real adapters (OpenAI, Ollama) later.
+ * Conforms to the new ModelAdapter interface.
  */
+import {
+  BaseModelAdapter,
+  ModelAdapterConfig,
+  ModelInput,
+  ModelOutput,
+} from "./adapter";
+import { EventBus } from "../eventBus";
 
-import { ModelAdapter, ModelResponse, ModelAdapterOptions } from "./adapter";
+export class MockAdapter extends BaseModelAdapter {
+  id: string = "mock-adapter";
+  supportsStreaming: boolean = false;
 
-export class MockAdapter implements ModelAdapter {
-  async generate(prompt: string, options?: ModelAdapterOptions): Promise<ModelResponse> {
-    // trivial heuristics: if prompt contains "read:" then call fs.read
+  constructor(eventBus: EventBus, config?: ModelAdapterConfig) {
+    super(eventBus, config);
+  }
+
+  protected async generateOnce(input: ModelInput): Promise<ModelOutput> {
+    const { prompt } = input;
+
+    // Trivial heuristics: if prompt contains keywords, return a tool call
     if (prompt.includes("CALL: fs.read")) {
       return {
         type: "tool",
         tool: "fs.read",
-        arguments: { path: "src/main.ts" }
+        arguments: { path: "src/main.ts" },
       };
     }
     if (prompt.includes("CALL: fs.write")) {
       return {
         type: "tool",
         tool: "fs.write",
-        arguments: { path: "src/main.ts", content: "// updated by agent\n" }
+        arguments: { path: "src/main.ts", content: "// updated by agent\n" },
       };
     }
+
     return { type: "final", content: "Mock response: no tool call." };
   }
 }

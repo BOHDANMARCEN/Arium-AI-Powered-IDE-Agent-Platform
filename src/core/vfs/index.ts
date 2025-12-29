@@ -9,6 +9,9 @@ import { PathTraversalError } from "../errors";
 import { validatePathLength } from "../utils/pathSecurity";
 import { FileVersion } from "./types";
 
+// Export the type for use in other modules
+export type { FileVersion };
+
 export class VFS {
   private files: Map<string, FileVersion> = new Map();
   private versions: Map<string, FileVersion> = new Map();
@@ -151,4 +154,3 @@ export class VFS {
     return (h >>> 0).toString(16);
   }
 }
-

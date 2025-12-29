@@ -10,7 +10,7 @@ export function agentRoutes(agent: any) {
   r.post("/run", validateBody(AgentRunSchema), async (req: Request, res: Response) => {
     try {
       // Get validated data from middleware
-      const validatedBody = (req as ValidatedRequest).validatedBody;
+      const validatedBody = (req as any).validatedBody;
       if (!validatedBody) {
         return res.status(400).json({
           ok: false,

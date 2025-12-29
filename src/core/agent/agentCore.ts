@@ -10,9 +10,9 @@
  * Replace existing agentCore implementation with this.
  */
 
-import { EventBus } from "../eventBus";
-import { TimeoutError, PermissionError } from "../errors/standardErrors";
-import { ModelAdapter, ModelResponse } from "../models/adapter";
+import { EventBus, EventEnvelope } from "../eventBus";
+import { TimeoutError } from "../errors/standardErrors";
+import { ModelAdapter, ModelInput, ModelOutput } from "../models/adapter";
 import { ToolEngine } from "../tool-engine";
 import { MockAdapter } from "../models/mockAdapter";
 import { simplePlanner } from "./planner";
@@ -24,23 +24,30 @@ import {
 import { BoundedContext, ContextMessage } from "./boundedContext";
 import { ok, err, Result } from "../utils/result";
 
+// Define the missing BaseAgentConfig based on its usage
+export interface BaseAgentConfig {
+  id: string;
+  model: any; // Generic model type
+  maxSteps?: number;
+  maxExecutionTimeMs?: number;
+  globalTimeoutMs?: number;
+  maxIdenticalToolCalls?: number;
+  maxContextTokens?: number;
+  maxConsecutiveFailures?: number;
+  stepTimeoutMs?: number;
+  permissions?: Permission[];
+  temperature?: number;
+  maxTokens?: number;
+  maxContextSize?: number;
+}
 
-// Result pattern imported from utils/result
-
-// AgentConfig with ModelAdapter type
+// AgentConfig with specific ModelAdapter type
 export interface AgentConfig extends Omit<BaseAgentConfig, "model"> {
   model?: ModelAdapter;
 }
 
 // Small interface for tool call signature used in tracking repeated calls
 type ToolCallSignature = string; // e.g. `${toolId}:${JSON.stringify(args)}`
-
-// Example AgentContext message shape — replace with your actual
-export interface AgentMessage {
-  role: "user" | "assistant" | "system" | "tool";
-  content: string;
-  meta?: Record<string, unknown>;
-}
 
 /**
  * Helper: wrap a Promise so it rejects when AbortSignal is aborted.
@@ -99,7 +106,8 @@ export class AgentCore {
   };
 
   constructor(cfg: AgentConfig, private eventBus: EventBus, private toolEngine: ToolEngine) {
-    this.model = cfg.model ?? new MockAdapter();
+    // Correctly instantiate MockAdapter with eventBus
+    this.model = cfg.model ?? new MockAdapter(this.eventBus);
     
     // Initialize BoundedContext
     const maxContextTokens = cfg.maxContextTokens ?? cfg.maxTokens ?? 4096;
@@ -122,7 +130,7 @@ export class AgentCore {
     };
     
     this.handleEmergencyStop = this.handleEmergencyStop.bind(this);
-    this.eventBus.on("AgentEmergencyStopEvent" as any, this.handleEmergencyStop);
+    this.eventBus.on("AgentEmergencyStopEvent", this.handleEmergencyStop);
   }
 
   // Public API: run a task; may resolve to Result or reject with TimeoutError / others
@@ -238,7 +246,7 @@ export class AgentCore {
     } finally {
       // Remove emergency stop listener if needed
       // NOTE: if you have multiple AgentCore instances, consider namespacing events
-      this.eventBus.off("AgentEmergencyStopEvent", this.handleEmergencyStop);
+      this.eventBus.off("AgentEmergencyStopEvent" as any, this.handleEmergencyStop);
     }
   }
 
@@ -283,16 +291,27 @@ export class AgentCore {
       },
     }));
 
+    // Create the ModelInput object
+    const modelInput: ModelInput = {
+      prompt: prompt,
+      options: {
+        temperature: this.cfg.temperature ?? 0.0,
+        max_tokens: this.cfg.maxTokens ?? 2048,
+        tools: tools.length > 0 ? tools : undefined,
+      }
+    };
+
     // Call model (wrap with withAbortable for abort support)
-    const modelPromise = this.model.generate(prompt, {
-      temperature: this.cfg.temperature ?? 0.0,
-      max_tokens: this.cfg.maxTokens ?? 2048,
-      tools: tools.length > 0 ? tools : undefined,
-    });
+    const modelPromise = this.model.generate(modelInput);
     
-    const modelResponse: ModelResponse = await withAbortable(modelPromise, signal, () => {
+    const modelResult = await withAbortable(modelPromise, signal, () => {
       this.eventBus.emit("ModelErrorEvent", { agentId: this.cfg.id, step });
     });
+
+    if (modelResult.ok === false) {
+      throw modelResult.error;
+    }
+    const modelResponse: ModelOutput = modelResult.value;
 
     this.eventBus.emit("ModelResponseEvent", { agentId: this.cfg.id, resp: modelResponse });
 

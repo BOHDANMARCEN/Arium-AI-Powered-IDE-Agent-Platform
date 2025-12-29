@@ -1,23 +1,35 @@
 /**
  * OpenAI Model Adapter
- * Supports GPT-4, GPT-4o, GPT-4o-mini with tool calling
+ * Conforms to the new Arium 0.2.0 ModelAdapter interface.
+ * Supports GPT-4, GPT-4o, GPT-4o-mini with tool calling.
  */
 
 import OpenAI from "openai";
-import { ModelAdapter, ModelResponse, ModelAdapterOptions, ToolSpec } from "./adapter";
-import { ModelAdapterError } from "../errors";
+import {
+  BaseModelAdapter,
+  ModelAdapterConfig,
+  ModelInput,
+  ModelOutput,
+  ModelChunk,
+  ToolSpec,
+} from "./adapter";
+import { ModelError } from "../errors/standardErrors";
+import { EventBus } from "../eventBus";
 
-export interface OpenAIAdapterConfig {
+export interface OpenAIAdapterConfig extends ModelAdapterConfig {
   apiKey: string;
   model?: string;
   baseURL?: string;
 }
 
-export class OpenAIAdapter implements ModelAdapter {
+export class OpenAIAdapter extends BaseModelAdapter {
+  id: string = "openai";
+  supportsStreaming: boolean = true;
   private client: OpenAI;
-  private defaultModel: string;
+  private model: string;
 
-  constructor(config: OpenAIAdapterConfig) {
+  constructor(config: OpenAIAdapterConfig, eventBus: EventBus) {
+    super(eventBus, config);
     if (!config.apiKey) {
       throw new Error("OpenAI API key is required");
     }
@@ -27,211 +39,134 @@ export class OpenAIAdapter implements ModelAdapter {
       baseURL: config.baseURL,
     });
 
-    this.defaultModel = config.model || "gpt-4o-mini";
+    this.model = config.model || "gpt-4o-mini";
   }
 
-  async generate(prompt: string, options?: ModelAdapterOptions): Promise<ModelResponse> {
-    const maxRetries = 3;
-    const timeoutMs = 60000; // 60 seconds
-    let lastError: Error | null = null;
+  protected async generateOnce(input: ModelInput): Promise<ModelOutput> {
+    const { prompt, context, options } = input;
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Build messages array
-        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ];
-
-        // Convert tools to OpenAI format if provided
-        const tools = options?.tools
-          ? options.tools.map((tool) => ({
-              type: "function" as const,
-              function: {
-                name: tool.function.name,
-                description: tool.function.description,
-                parameters: tool.function.parameters || {},
-              },
-            }))
-          : undefined;
-
-        // Add timeout using AbortController
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-        try {
-          const response = await this.client.chat.completions.create(
-            {
-              model: this.defaultModel,
-              messages,
-              tools,
-              tool_choice: options?.tool_choice || "auto",
-              temperature: options?.temperature ?? 0.0,
-              max_tokens: options?.max_tokens ?? 2048,
-            },
-            {
-              signal: controller.signal as any,
-            }
-          );
-
-          clearTimeout(timeoutId);
-
-          const choice = response.choices[0];
-          if (!choice) {
-            throw new Error("No response from OpenAI");
-          }
-
-          // Handle tool calls (Phase 2.5: structured JSON with fallback)
-          if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-            const toolCall = choice.message.tool_calls[0];
-            try {
-              // Phase 2.5: Parse JSON with fallback
-              const arguments_ = JSON.parse(toolCall.function.arguments || "{}");
-              return {
-                type: "tool",
-                tool: toolCall.function.name,
-                arguments: arguments_,
-                usage: {
-                  prompt_tokens: response.usage?.prompt_tokens,
-                  completion_tokens: response.usage?.completion_tokens,
-                  total_tokens: response.usage?.total_tokens,
-                },
-              };
-            } catch (parseError) {
-              // Fallback: return empty arguments if JSON parsing fails
-              return {
-                type: "tool",
-                tool: toolCall.function.name,
-                arguments: {},
-                usage: {
-                  prompt_tokens: response.usage?.prompt_tokens,
-                  completion_tokens: response.usage?.completion_tokens,
-                  total_tokens: response.usage?.total_tokens,
-                },
-              };
-            }
-          }
-
-          // Handle final answer
-          const content = choice.message.content || "";
-          return {
-            type: "final",
-            content,
-            usage: {
-              prompt_tokens: response.usage?.prompt_tokens,
-              completion_tokens: response.usage?.completion_tokens,
-              total_tokens: response.usage?.total_tokens,
-            },
-          };
-        } catch (fetchError: unknown) {
-          clearTimeout(timeoutId);
-          throw fetchError;
-        }
-      } catch (error: unknown) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        // Check if error is retryable
-        const isRetryable =
-          error.message?.includes("429") || // Rate limit
-          error.message?.includes("500") || // Server error
-          error.message?.includes("503") || // Service unavailable
-          error.message?.includes("timeout") ||
-          error.message?.includes("ECONNRESET") ||
-          error.message?.includes("ETIMEDOUT") ||
-          error.name === "AbortError";
-
-        if (isRetryable && attempt < maxRetries - 1) {
-          // Exponential backoff
-          const delay = Math.pow(2, attempt) * 1000;
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          continue; // Retry
-        }
-
-        throw new ModelAdapterError(error.message || "Unknown error", "openai", error);
-      }
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    if (context) {
+      messages.push(...context.map(c => ({ role: "system" as const, content: c })));
     }
+    messages.push({ role: "user", content: prompt });
 
-    throw new ModelAdapterError(
-      lastError?.message || "Unknown error after retries",
-      "openai",
-      lastError || undefined
-    );
+    const tools = this.formatTools(options?.tools);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.config.timeoutMs);
+
+    try {
+      const response = await this.client.chat.completions.create(
+        {
+          model: this.model,
+          messages,
+          tools,
+          tool_choice: options?.tool_choice || "auto",
+          temperature: options?.temperature ?? 0.0,
+          max_tokens: options?.max_tokens ?? 2048,
+        },
+        { signal: controller.signal }
+      );
+
+      clearTimeout(timeoutId);
+
+      const choice = response.choices[0];
+      if (!choice) {
+        throw new Error("No response choice from OpenAI");
+      }
+
+      // Handle tool calls
+      if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+        const toolCall = choice.message.tool_calls[0];
+        try {
+          const parsedArgs = JSON.parse(toolCall.function.arguments || "{}");
+          return {
+            type: "tool",
+            tool: toolCall.function.name,
+            arguments: parsedArgs,
+            usage: response.usage,
+          };
+        } catch (parseError) {
+          // Fallback for malformed JSON from the model
+          return {
+            type: "tool",
+            tool: toolCall.function.name,
+            arguments: {}, // Return empty object on parse failure
+            usage: response.usage,
+          };
+        }
+      }
+
+      // Handle final answer
+      return {
+        type: "final",
+        content: choice.message.content || "",
+        usage: response.usage,
+      };
+    } catch (e: unknown) {
+        clearTimeout(timeoutId);
+        // Let the base class handle the error via its retry mechanism
+        throw e;
+    }
   }
 
-  async *stream(
-    prompt: string,
-    options?: ModelAdapterOptions
-  ): AsyncGenerator<ModelResponse> {
-    try {
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ];
+  async *stream(input: ModelInput): AsyncGenerator<ModelChunk, void, unknown> {
+    const { prompt, context, options } = input;
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    if (context) {
+        messages.push(...context.map(c => ({ role: "system" as const, content: c })));
+    }
+    messages.push({ role: "user", content: prompt });
+    const tools = this.formatTools(options?.tools);
 
-      const tools = options?.tools
-        ? options.tools.map((tool) => ({
-            type: "function" as const,
-            function: {
-              name: tool.function.name,
-              description: tool.function.description,
-              parameters: tool.function.parameters || {},
-            },
-          }))
-        : undefined;
-
-      const stream = await this.client.chat.completions.create({
-        model: this.defaultModel,
+    const stream = await this.client.chat.completions.create({
+        model: this.model,
         messages,
         tools,
         tool_choice: options?.tool_choice || "auto",
         temperature: options?.temperature ?? 0.0,
         max_tokens: options?.max_tokens ?? 2048,
         stream: true,
-      });
+    });
 
-      let accumulatedContent = "";
-      let toolCallName: string | null = null;
-      let toolCallArguments = "";
-
-      for await (const chunk of stream) {
+    for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
-        if (!delta) continue;
-
-        // Handle tool calls
-        if (delta.tool_calls && delta.tool_calls.length > 0) {
-          const toolCall = delta.tool_calls[0];
-          if (toolCall.function?.name) {
-            toolCallName = toolCall.function.name;
-          }
-          if (toolCall.function?.arguments) {
-            toolCallArguments += toolCall.function.arguments;
-          }
-
-          if (toolCallName && toolCallArguments) {
-            yield {
-              type: "tool",
-              tool: toolCallName,
-              arguments: JSON.parse(toolCallArguments),
-            };
-          }
+        if (delta?.content) {
+            yield { content: delta.content };
         }
-
-        // Handle text content
-        if (delta.content) {
-          accumulatedContent += delta.content;
-          yield {
-            type: "final",
-            content: accumulatedContent,
-          };
-        }
-      }
-    } catch (error: unknown) {
-      throw new Error(`OpenAI streaming error: ${error.message}`);
     }
+  }
+
+  protected handleError(error: unknown): ModelError {
+    if (error instanceof OpenAI.APIError) {
+        const code = this.shouldRetry(error) ? "transient" : "fatal";
+        return new ModelError(error.message, this.id, error, code);
+    }
+    if (error instanceof Error) {
+        return new ModelError(error.message, this.id, error, this.shouldRetry(error) ? "transient" : "fatal");
+    }
+    return new ModelError("Unknown OpenAI error", this.id, undefined, "fatal");
+  }
+
+  protected shouldRetry(error: Error): boolean {
+    if (error instanceof OpenAI.RateLimitError) return true;
+    if (error instanceof OpenAI.InternalServerError) return true;
+    if (error instanceof OpenAI.ConflictError) return true; // e.g. 409
+    if (error.message.includes("timeout")) return true;
+    return false;
+  }
+  
+  private formatTools(tools: ToolSpec[] | undefined): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {
+      if (!tools) return undefined;
+      return tools.map(tool => ({
+          type: "function",
+          function: {
+              name: tool.function.name,
+              description: tool.function.description,
+              parameters: tool.function.parameters || {},
+          }
+      }));
   }
 }
 

@@ -6,14 +6,12 @@ import { agentRoutes } from "./routes/agent";
 import { vfsRoutes } from "./routes/vfs";
 import { eventRoutes } from "./routes/events";
 import { toolsRoutes } from "./routes/tools";
-import { modelsRoutes } from "./routes/models";
 
-export async function startServer({ agent, vfs, eventBus, toolEngine, modelManager }: {
+export async function startServer({ agent, vfs, eventBus, toolEngine }: {
   agent: any;
   vfs: any;
   eventBus: any;
   toolEngine: any;
-  modelManager: any;
 }) {
   const deps = {
     routes: {
@@ -21,7 +19,6 @@ export async function startServer({ agent, vfs, eventBus, toolEngine, modelManag
       vfs: vfsRoutes(vfs),
       events: eventRoutes(eventBus),
       tools: toolsRoutes(toolEngine),
-      models: modelsRoutes(modelManager)
     }
   };
 

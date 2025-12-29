@@ -35,7 +35,8 @@ export type EventType =
   | "ContextCompressionEvent"
   | "StopConditionTriggered"
   | "DebugMetricsEvent"
-  | "context_summarized";
+  | "context_summarized"
+  | "ollama.ready";
 
 export interface EventEnvelope<T = unknown> {
   id: string;

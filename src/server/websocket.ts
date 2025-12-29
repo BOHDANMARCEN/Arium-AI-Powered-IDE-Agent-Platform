@@ -1,7 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
+import type { Duplex } from "stream";
 import { IncomingMessage } from "http";
 import { Server } from "http";
-import { EventBus } from "../core/eventBus";
+import { EventBus, EventEnvelope } from "../core/eventBus";
 import { extractToken, verifyToken, getJWTSecret } from "./auth";
 import { wsRateLimiter } from "./middleware/wsRateLimit";
 
@@ -30,7 +31,7 @@ export function createWsServer(server: Server, eventBus: EventBus) {
     const rateLimitResult = wsRateLimiter.check(clientIp);
     if (!rateLimitResult.allowed) {
       socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
-      socket.destroy();
+      (socket as any).destroy?.();
       
       // Audit log: rate limit exceeded
       eventBus.emit("SecurityEvent", {
@@ -52,7 +53,7 @@ export function createWsServer(server: Server, eventBus: EventBus) {
       if (!token) {
         wsRateLimiter.recordFailure(clientIp);
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
+        (socket as any).destroy?.();
         
         // Audit log: missing token
         eventBus.emit("SecurityEvent", {
@@ -78,7 +79,7 @@ export function createWsServer(server: Server, eventBus: EventBus) {
         });
         
         // Upgrade connection with authenticated payload
-        wss.handleUpgrade(request, socket, head, (ws: AuthenticatedWebSocket) => {
+        wss.handleUpgrade(request, socket as unknown as Duplex, head, (ws: AuthenticatedWebSocket) => {
           // Attach auth info to socket
           ws.auth = {
             id: payload.id,
@@ -96,7 +97,7 @@ export function createWsServer(server: Server, eventBus: EventBus) {
         wsRateLimiter.recordFailure(clientIp);
         const errMsg = err instanceof Error ? err.message : String(err);
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
+        (socket as any).destroy?.();
         
         // Audit log: authentication failure
         eventBus.emit("SecurityEvent", {
@@ -109,7 +110,7 @@ export function createWsServer(server: Server, eventBus: EventBus) {
       }
     } else {
       // No auth required - upgrade directly
-      wss.handleUpgrade(request, socket, head, (ws: AuthenticatedWebSocket) => {
+      wss.handleUpgrade(request, socket as unknown as Duplex, head, (ws: AuthenticatedWebSocket) => {
         ws.auth = { id: "anonymous", permissions: [] };
         ws.user = { id: "anonymous", permissions: [] };
         wss.emit("connection", ws, request);

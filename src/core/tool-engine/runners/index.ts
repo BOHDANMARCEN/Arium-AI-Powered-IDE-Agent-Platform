@@ -2,6 +2,8 @@
  * Tool Runners Module
  */
 
-export { JSRunner, JSRunnerConfig } from "./jsRunner";
-export { PyRunner, PyRunnerConfig } from "./pyRunner";
+export { JSRunner } from "./jsRunner";
+export type { JsRunnerConfig } from "./jsRunner";
+export { PyRunner } from "./pyRunner";
+export type { PyRunnerConfig } from "./pyRunner";
 

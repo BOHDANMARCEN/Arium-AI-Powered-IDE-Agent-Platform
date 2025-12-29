@@ -9,7 +9,9 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "isolatedModules": true,
+    "moduleResolution": "node"
   },
   "include": ["src"],
   "exclude": [
@@ -21,4 +23,3 @@
     "tests"
   ]
 }
-

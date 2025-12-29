@@ -1,32 +1,25 @@
 /**
  * Arium Logger v2 - Pino-based Structured Logging
  * Professional logging with pretty dev output and JSON structured mode
- *
- * Author: Bogdan Marcen & ChatGPT 5.1
  */
 
 import pino from "pino";
 import { EventBus } from "../eventBus";
-import { createDevTransport } from "./transports";
-import { LoggerConfig, LogLevel, LogSource } from "./config";
+import { createLoggerConfig, LoggerConfig, LogLevel } from "./config";
 
 export class Logger {
   private logger: pino.Logger;
   private config: LoggerConfig;
   private eventBus?: EventBus;
 
-  constructor(config: LoggerConfig = {}, eventBus?: EventBus) {
-    this.config = {
-      level: config.level || "info",
-      format: config.format || "pretty",
-      source: config.source,
-      ...config,
-    };
-
+  constructor(config: Partial<LoggerConfig> = {}, eventBus?: EventBus) {
+    this.config = createLoggerConfig(config);
     this.eventBus = eventBus;
+    this.logger = this.createPinoLogger();
+  }
 
-    // Create Pino logger with appropriate transport
-    this.logger = pino({
+  private createPinoLogger(): pino.Logger {
+    const pinoConfig: pino.LoggerOptions = {
       level: this.config.level,
       formatters: {
         level: (label) => ({ level: label }),
@@ -42,16 +35,20 @@ export class Logger {
         req: pino.stdSerializers.req,
         res: pino.stdSerializers.res,
       },
-      ...(this.config.format === "pretty" ? createDevTransport() : {}),
-    });
+    };
 
-    // Bind methods for better performance
-    this.trace = this.trace.bind(this);
-    this.debug = this.debug.bind(this);
-    this.info = this.info.bind(this);
-    this.warn = this.warn.bind(this);
-    this.error = this.error.bind(this);
-    this.fatal = this.fatal.bind(this);
+    if (this.config.format === 'pretty') {
+      pinoConfig.transport = {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'SYS:standard',
+          ignore: 'pid,hostname,source',
+        },
+      };
+    }
+
+    return pino(pinoConfig);
   }
 
   /**
@@ -66,7 +63,7 @@ export class Logger {
   /**
    * Create a logger for a specific source (agent, tool, model)
    */
-  static forSource(source: LogSource, config?: LoggerConfig, eventBus?: EventBus): Logger {
+  static forSource(source: string, config: Partial<LoggerConfig> = {}, eventBus?: EventBus): Logger {
     return new Logger({ ...config, source }, eventBus);
   }
 
@@ -75,26 +72,7 @@ export class Logger {
    */
   updateConfig(config: Partial<LoggerConfig>): void {
     this.config = { ...this.config, ...config };
-
-    // Recreate logger with new config
-    this.logger = pino({
-      level: this.config.level,
-      formatters: {
-        level: (label) => ({ level: label }),
-        log: (obj) => {
-          if (this.config.source) {
-            obj.source = this.config.source;
-          }
-          return obj;
-        },
-      },
-      serializers: {
-        error: pino.stdSerializers.err,
-        req: pino.stdSerializers.req,
-        res: pino.stdSerializers.res,
-      },
-      ...(this.config.format === "pretty" ? createDevTransport() : {}),
-    });
+    this.logger = this.createPinoLogger();
   }
 
   // Logging methods

@@ -1,7 +1,9 @@
-/**
- * Storage module exports
- */
+import { PersistentEventBus } from "./persistentEventBus";
+import type { PersistentEventBusConfig } from "./persistentEventBus";
+export { PersistentEventBus };
+export type { PersistentEventBusConfig };
 
-export { PersistentEventBus, PersistentEventBusConfig } from "./persistentEventBus";
-export { PersistentVFS, PersistentVFSConfig } from "./persistentVFS";
-
+import { PersistentVFS } from "./persistentVFS";
+import type { PersistentVFSConfig } from "./persistentVFS";
+export { PersistentVFS };
+export type { PersistentVFSConfig };

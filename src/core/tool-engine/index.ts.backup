@@ -1,3 +1,13 @@
+/**
+ * Minimal Tool Engine:
+ * - register tool definitions
+ * - validate payload shape (very light)
+ * - call runner functions (builtin JS in-process)
+ * - support sandboxed JS runners
+ *
+ * Extend runners to spawn sandboxed Node/Deno/Python processes.
+ */
+
 import Ajv, { JSONSchemaType } from "ajv";
 import { EventBus } from "../eventBus";
 import { JSRunner } from "./runners/jsRunner";
@@ -5,18 +15,17 @@ import { PyRunner } from "./runners/pyRunner";
 import { PermissionManager } from "./permissionManager";
 import { Permission } from "../agent/permissions";
 import { Tool, ToolExecutionResult, ToolCaller, ToolExecutionContext } from "../types";
-import { ToolExecutionPool, ToolExecutor, ToolResultEvent } from "./toolExecutionPool";
 
-export type ToolRunner = (
+export type ToolRunner = <T = unknown>(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
-) => Promise<ToolExecutionResult>;
+) => Promise<ToolExecutionResult<T>>;
 
 export interface ToolDef extends Tool {
   // ToolDef extends Tool interface for backward compatibility
 }
 
-export type { ToolExecutionContext };
+export { ToolExecutionContext };
 
 /**
  * Token bucket rate limiter for tool invocations
@@ -122,14 +131,13 @@ export class ToolEngine {
   private pyRunner: PyRunner;
   private rateLimiter: ToolRateLimiter;
   private permissionManager: PermissionManager;
-  private executionPool: ToolExecutionPool;
 
   constructor(private eventBus: EventBus) {
     this.jsRunner = new JSRunner({
       timeoutMs: parseInt(process.env.JS_RUNNER_TIMEOUT_MS || "5000", 10), // 5000ms default
       memoryLimitMb: parseInt(process.env.JS_RUNNER_MEMORY_MB || "64", 10),
     });
-
+    
     this.pyRunner = new PyRunner({
       timeoutMs: 30000,
       maxMemoryMb: 256,
@@ -143,21 +151,13 @@ export class ToolEngine {
     // Permission manager
     this.permissionManager = new PermissionManager(eventBus);
 
-    // Initialize execution pool
-    this.executionPool = new ToolExecutionPool({
-      maxConcurrent: parseInt(process.env.TOOL_EXECUTION_POOL_SIZE || "5", 10),
-      emitEvent: (event: ToolResultEvent) => {
-        this.eventBus.emit("ToolResultEvent", event);
-      },
-    });
-
     // Cleanup rate limit store every 5 minutes
     setInterval(() => this.rateLimiter.cleanup(), 5 * 60 * 1000);
   }
 
   register(def: ToolDef, run: ToolRunner | string) {
     if (this.tools.has(def.id)) throw new Error("Tool already registered: " + def.id);
-
+    
     // If run is a string (code), validate and create a sandboxed runner
     let runner: ToolRunner;
     if (typeof run === "string") {
@@ -185,13 +185,13 @@ export class ToolEngine {
     } else {
       runner = run;
     }
-
+    
     // compile schema if present
     let validator: ((x: unknown) => boolean) | null = null;
     if (def.schema) {
       validator = this.ajv.compile(def.schema);
     }
-
+    
     const wrapper: ToolRunner = async (args, ctx) => {
       if (validator && !validator(args)) {
         const errors = (validator as any).errors || [];
@@ -199,7 +199,6 @@ export class ToolEngine {
         this.eventBus.emit("ToolErrorEvent", { toolId: def.id, error: err });
         return err as ToolExecutionResult<any>;
       }
-
       this.eventBus.emit("ToolInvocationEvent", { toolId: def.id, args });
       try {
         const out = await runner(args, ctx);
@@ -211,7 +210,7 @@ export class ToolEngine {
         return err as ToolExecutionResult<any>;
       }
     };
-
+    
     this.tools.set(def.id, { def, run: wrapper });
   }
 
@@ -347,75 +346,8 @@ export class ToolEngine {
     }
   }
 
-  /**
-   * Execute tool asynchronously using the execution pool
-   */
-  executeAsync(
-    toolId: string,
-    args: Record<string, unknown>,
-    caller?: { id?: string; permissions?: Permission[] }
-  ) {
-    const t = this.tools.get(toolId);
-    if (!t) {
-      throw new Error("Tool not found: " + toolId);
-    }
-
-    // Check rate limiting (token bucket)
-    const callerId = caller?.id || "anonymous";
-    const rateLimitKey = `${callerId}:${toolId}`;
-    const allowed = this.rateLimiter.allow(rateLimitKey, 1);
-
-    if (!allowed) {
-      const remaining = this.rateLimiter.getRemaining(rateLimitKey);
-      this.eventBus.emit("SecurityEvent", {
-        type: "rate_limit_exceeded",
-        toolId,
-        callerId,
-        remaining,
-        timestamp: Date.now(),
-      });
-      throw new Error("Rate limit exceeded");
-    }
-
-    // Check permissions using PermissionManager
-    const required = t.def.permissions || [];
-    const callerPerms = PermissionManager.validatePermissionStrings(
-      caller?.permissions || []
-    ) as Permission[];
-
-    const permissionCheck = this.permissionManager.checkPermissions(
-      required,
-      callerPerms,
-      {
-        toolId,
-        callerId: caller?.id || "anonymous",
-      }
-    );
-
-    if (!permissionCheck.allowed) {
-      throw new Error("Permission denied");
-    }
-
-    // Create executor function for the execution pool
-    const executor: ToolExecutor = async (input, signal) => {
-      try {
-        const result = await t.run(input as Record<string, unknown>, { eventBus: this.eventBus });
-        if (signal.aborted) {
-          throw new Error("Execution cancelled");
-        }
-        return result;
-      } catch (error) {
-        if (signal.aborted) {
-          throw new Error("Execution cancelled");
-        }
-        throw error;
-      }
-    };
-
-    return this.executionPool.execute(toolId, args, executor);
-  }
-
   list() {
     return Array.from(this.tools.values()).map(x => x.def);
   }
 }
+

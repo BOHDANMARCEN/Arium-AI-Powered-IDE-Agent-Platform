@@ -71,7 +71,7 @@ export class MultimodalTestRunner {
     // Mock adapter (always available)
     this.addModel({
       name: "mock",
-      adapter: new MockAdapter(),
+      adapter: new MockAdapter(this.eventBus),
       enabled: true,
       expectedCapabilities: ["basic-responses"],
     });

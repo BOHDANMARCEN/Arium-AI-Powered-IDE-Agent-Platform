@@ -27,11 +27,11 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
       permissions: ["vfs.read"],
     },
     async (args) => {
-      const content = vfs.read(args.path);
+      const content = vfs.read((args as { path: string }).path);
       if (content === null) {
         return {
           ok: false,
-          error: { message: `File not found: ${args.path}`, code: "ENOENT" },
+          error: { message: `File not found: ${(args as { path: string }).path}`, code: "ENOENT" },
         };
       }
       return { ok: true, data: content };
@@ -56,8 +56,8 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
       permissions: ["vfs.write"],
     },
     async (args) => {
-      const version = vfs.write(args.path, args.content, "agent");
-      return { ok: true, data: { versionId: version.id, path: args.path } };
+      const version = vfs.write((args as { path: string }).path, (args as { content: string }).content, "agent");
+      return { ok: true, data: { versionId: version.id, path: (args as { path: string }).path } };
     }
   );
 
@@ -78,14 +78,14 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
       permissions: ["vfs.delete"],
     },
     async (args) => {
-      const result = vfs.delete(args.path, "agent");
+      const result = vfs.delete((args as { path: string }).path, "agent");
       if (!result.ok) {
         return {
           ok: false,
-          error: { message: result.error?.message || "Failed to delete", path: args.path },
+          error: { message: result.error?.message || "Failed to delete", path: (args as { path: string }).path },
         };
       }
-      return { ok: true, data: { path: args.path } };
+      return { ok: true, data: { path: (args as { path: string }).path } };
     }
   );
 
@@ -132,7 +132,7 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
       permissions: ["vfs.read"],
     },
     async (args) => {
-      const diff = vfs.diff(args.versionA, args.versionB);
+      const diff = vfs.diff((args as { versionA: string }).versionA, (args as { versionB: string }).versionB);
       return { ok: true, data: diff };
     }
   );
@@ -160,7 +160,7 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
       const snapshotId = vfs.snapshot("agent");
       return {
         ok: true,
-        data: { snapshotId, label: args.label || "auto-snapshot" },
+        data: { snapshotId, label: (args as { label?: string }).label || "auto-snapshot" },
       };
     }
   );
@@ -193,17 +193,17 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
     async (args) => {
       let content: string;
       
-      if (args.type === "file") {
-        const fileContent = vfs.read(args.input);
+      if ((args as { type?: string }).type === "file") {
+        const fileContent = vfs.read((args as { input: string }).input);
         if (fileContent === null) {
           return {
             ok: false,
-            error: { message: `File not found: ${args.input}` },
+            error: { message: `File not found: ${(args as { input: string }).input}` },
           };
         }
         content = fileContent;
       } else {
-        content = args.input;
+        content = (args as { input: string }).input;
       }
 
       // Simple hash function (FNV-1a)
@@ -214,7 +214,7 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
       }
       const hashHex = (hash >>> 0).toString(16);
 
-      return { ok: true, data: { hash: hashHex, input: args.input } };
+      return { ok: true, data: { hash: hashHex, input: (args as { input: string }).input } };
     }
   );
 
@@ -241,31 +241,33 @@ export function registerBuiltinTools(toolEngine: ToolEngine, vfs: VFS) {
     },
     async (args) => {
       let result: string | number;
+      const operation = (args as { operation: string }).operation;
+      const text = (args as { text: string }).text;
       
-      switch (args.operation) {
+      switch (operation) {
         case "uppercase":
-          result = args.text.toUpperCase();
+          result = text.toUpperCase();
           break;
         case "lowercase":
-          result = args.text.toLowerCase();
+          result = text.toLowerCase();
           break;
         case "reverse":
-          result = args.text.split("").reverse().join("");
+          result = text.split("").reverse().join("");
           break;
         case "trim":
-          result = args.text.trim();
+          result = text.trim();
           break;
         case "word-count":
-          result = args.text.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+          result = text.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
           break;
         default:
           return {
             ok: false,
-            error: { message: `Unknown operation: ${args.operation}` },
+            error: { message: `Unknown operation: ${operation}` },
           };
       }
 
-      return { ok: true, data: { result, operation: args.operation } };
+      return { ok: true, data: { result, operation: operation } };
     }
   );
 
