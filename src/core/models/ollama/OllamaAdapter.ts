@@ -1,61 +1,106 @@
-import { EventBus } from '../../eventBus';
-import { OllamaClient } from './OllamaClient';
-import { OllamaGenerateInput, OllamaGenerateResult, OllamaModelInfo } from './types';
+import { EventBus } from "../../eventBus";
+import { ModelAdapter, ModelInput, ModelOutput } from "../adapter";
+import { ModelError } from "../../errors/standardErrors";
+import { Result } from "../../utils/result";
+import { OllamaClient } from "./OllamaClient";
+import { OllamaGenerateInput, OllamaGenerateResult, OllamaMessage, OllamaModelInfo } from "./types";
 
-/**
- * A model adapter for interacting with local Ollama models.
- * It follows a simplified API tailored for Ollama's capabilities
- * and does not conform to the more complex ModelAdapter interface.
- */
-export class OllamaAdapter {
+export interface OllamaAdapterConfig {
+  defaultModel?: string;
+  executable?: string;
+}
+
+export class OllamaAdapter implements ModelAdapter {
+  id = "ollama";
+  supportsStreaming = false;
+  eventBus: EventBus;
   private client: OllamaClient;
   private availableModels: OllamaModelInfo[] = [];
+  private defaultModel?: string;
 
-  constructor(public eventBus: EventBus) {
-    this.client = new OllamaClient();
+  constructor(eventBus: EventBus, config: OllamaAdapterConfig = {}) {
+    this.eventBus = eventBus;
+    this.client = new OllamaClient(config.executable);
+    this.defaultModel = config.defaultModel;
   }
 
-  /**
-   * Initializes the adapter by detecting available Ollama models.
-   * Emits an 'ollama.ready' event with the list of available models.
-   */
-  public async init(): Promise<void> {
-    try {
-      this.availableModels = await this.client.listModels();
-      this.eventBus.emit('ollama.ready', { models: this.availableModels });
-    } catch (error) {
-      console.error('Failed to initialize OllamaAdapter:', error);
-      // We don't rethrow here, as the application might be able to run
-      // without Ollama, but we log the failure.
-    }
-  }
+  async init(): Promise<void> {
+    this.availableModels = await this.client.listModels();
 
-  /**
-   * Generates a response from an Ollama model.
-   *
-   * @param input - The input for the model, including messages and an optional model name.
-   * @returns A promise that resolves to the generation result.
-   * @throws An error if no models are available or the specified model is not found.
-   */
-  public async generate(input: OllamaGenerateInput): Promise<OllamaGenerateResult> {
     if (this.availableModels.length === 0) {
-      throw new Error('No Ollama models available. Cannot generate response.');
+      throw new Error("No Ollama models available. Pull a model with `ollama pull <model>`.");
     }
 
-    const modelName = input.model || this.availableModels[0].name;
-
-    const modelExists = this.availableModels.some(m => m.name === modelName);
-    if (!modelExists) {
-      throw new Error(`Model '${modelName}' is not available. Available models: ${this.availableModels.map(m => m.name).join(', ')}`);
+    if (!this.defaultModel) {
+      this.defaultModel = this.availableModels[0].name;
     }
 
-    // Convert message history to a single prompt string.
-    // This is a simplified approach. A more sophisticated implementation
-    // would format this based on the specific model's chat template.
-    const prompt = input.messages.map(m => `[${m.role}] ${m.content}`).join('\n');
+    this.eventBus.emit("ollama.ready", { models: this.availableModels });
+  }
 
-    const content = await this.client.generate(modelName, prompt);
+  getAvailableModels(): OllamaModelInfo[] {
+    return [...this.availableModels];
+  }
 
-    return { content };
+  async generate(input: OllamaGenerateInput, modelName?: string): Promise<OllamaGenerateResult>;
+  async generate(input: ModelInput): Promise<Result<ModelOutput, ModelError>>;
+  async generate(
+    input: OllamaGenerateInput | ModelInput,
+    modelName?: string
+  ): Promise<OllamaGenerateResult | Result<ModelOutput, ModelError>> {
+    if ("messages" in input) {
+      return this.generateFromMessages(input, modelName);
+    }
+
+    const messages: OllamaMessage[] = [];
+    if (input.context) {
+      messages.push(...input.context.map((content) => ({ role: "system", content })));
+    }
+    messages.push({ role: "user", content: input.prompt });
+
+    try {
+      const result = await this.generateFromMessages({ messages }, modelName);
+      return {
+        ok: true,
+        value: {
+          type: "final",
+          content: result.content,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        error: new ModelError(message, this.id, error instanceof Error ? error : undefined),
+      };
+    }
+  }
+
+  private async generateFromMessages(
+    input: OllamaGenerateInput,
+    modelName?: string
+  ): Promise<OllamaGenerateResult> {
+    if (this.availableModels.length === 0) {
+      await this.init();
+    }
+
+    const model = modelName || this.defaultModel || this.availableModels[0]?.name;
+    if (!model) {
+      throw new Error("No Ollama model configured.");
+    }
+
+    const prompt = this.messagesToPrompt(input.messages);
+    const content = await this.client.generate(model, prompt);
+
+    return {
+      model,
+      content,
+    };
+  }
+
+  private messagesToPrompt(messages: OllamaMessage[]): string {
+    return messages
+      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .join("\n");
   }
 }
