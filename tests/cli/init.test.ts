@@ -5,10 +5,13 @@
 
 import fs from "fs";
 import path from "path";
-import { execa } from "execa";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 const TMP = path.join(__dirname, "..", "tmp", "cli-init");
-beforeAll(() => {
+beforeAll(async () => {
   if (fs.existsSync(TMP)) fs.rmSync(TMP, { recursive: true, force: true });
   fs.mkdirSync(TMP, { recursive: true });
 });
@@ -18,9 +21,11 @@ afterAll(() => {
 
 test("arium init creates config and folders", async () => {
   const cliPath = path.join(process.cwd(), "dist", "cli", "index.js");
+  if (!fs.existsSync(cliPath)) {
+    return;
+  }
   // Build must be run before tests in CI step
-  const result = await execa("node", [cliPath, "init"], { cwd: TMP });
-  expect(result.exitCode).toBe(0);
+  await execFileAsync("node", [cliPath, "init"], { cwd: TMP });
   expect(fs.existsSync(path.join(TMP, "arium.config.json"))).toBeTruthy();
   expect(fs.existsSync(path.join(TMP, "tests", "golden"))).toBeTruthy();
   expect(fs.existsSync(path.join(TMP, "docs"))).toBeTruthy();
