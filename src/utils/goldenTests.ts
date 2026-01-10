@@ -184,6 +184,14 @@ export class GoldenTestRunner {
  * Deep equality check for test data
  */
 function deepEqual(a: any, b: any): boolean {
+  if (a && typeof a === "object" && typeof a.asymmetricMatch === "function") {
+    return a.asymmetricMatch(b);
+  }
+
+  if (b && typeof b === "object" && typeof b.asymmetricMatch === "function") {
+    return b.asymmetricMatch(a);
+  }
+
   if (a === b) return true;
 
   if (a == null || b == null) return a === b;
