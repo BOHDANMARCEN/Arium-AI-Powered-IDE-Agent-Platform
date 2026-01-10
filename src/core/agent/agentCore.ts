@@ -35,6 +35,7 @@ export interface BaseAgentConfig {
   maxContextTokens?: number;
   maxConsecutiveFailures?: number;
   stepTimeoutMs?: number;
+  contextSummarizationThreshold?: number;
   permissions?: Permission[];
   temperature?: number;
   maxTokens?: number;
@@ -96,7 +97,12 @@ export class AgentCore {
   private stepTimeoutMs: number;
   private agentPermissions: Permission[];
   private stopped = false;
-  private toolCallCounts: Map<ToolCallSignature, number> = new Map();
+  private consecutiveFailures = 0;
+  private lastToolSignature: ToolCallSignature | null = null;
+  private repeatedToolSignatureCalls = 0;
+  private lastToolId: string | null = null;
+  private repeatedToolIdCalls = 0;
+  private contextSummarizationThreshold?: number;
   private cfg: AgentConfig & {
     maxSteps: number;
     maxExecutionTimeMs: number;
@@ -118,6 +124,7 @@ export class AgentCore {
     
     this.maxConsecutiveFailures = cfg.maxConsecutiveFailures ?? 3;
     this.stepTimeoutMs = cfg.stepTimeoutMs ?? 30000;
+    this.contextSummarizationThreshold = cfg.contextSummarizationThreshold;
     this.agentPermissions = cfg.permissions || DEFAULT_LEAST_PRIVILEGE;
     
     this.cfg = {
@@ -161,7 +168,29 @@ export class AgentCore {
 
           try {
             // single step: must respect abort signal
-            await this.stepOnce({ step, signal, model: opts?.model });
+            const stepResult = await this.runStepWithTimeout({
+              step,
+              signal,
+              model: opts?.model,
+            });
+
+            if (stepResult && typeof stepResult === "object" && "ok" in stepResult) {
+              if (!stepResult.ok) {
+                const errorCode = (stepResult as { error?: { code?: string } }).error?.code;
+                if (errorCode !== "tool_not_found") {
+                  this.consecutiveFailures += 1;
+                  if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+                    throw new AgentLoopError("too many consecutive failures", step);
+                  }
+                } else {
+                  this.consecutiveFailures = 0;
+                }
+              } else {
+                this.consecutiveFailures = 0;
+              }
+            } else {
+              this.consecutiveFailures = 0;
+            }
 
             // if emergency stop flagged, break
             if (this.stopped) break;
@@ -170,6 +199,9 @@ export class AgentCore {
             lastError = e instanceof Error ? e : new Error(String(e));
             // If it's an Abort/Timeout, propagate immediately
             if (e instanceof TimeoutError) throw e;
+            if (e instanceof AgentLoopError || (e as Error)?.name === "AgentLoopError") {
+              throw e;
+            }
             // Otherwise, emit event and decide whether to continue or abort
             this.eventBus.emit("ModelErrorEvent", { error: e, step });
             // choose to break or continue depending on severity: here we break to be safe
@@ -182,7 +214,7 @@ export class AgentCore {
 
         // If stopped by emergency
         if (this.stopped) {
-          return err(new Error("Execution stopped by emergency stop"));
+          return err(new Error("Emergency stop triggered"));
         }
 
         // If aborted by signal
@@ -194,6 +226,19 @@ export class AgentCore {
         const lastMessage = this.context.getAll().slice(-1)[0];
         if (lastMessage?.role === "assistant") {
           return ok({ answer: lastMessage.content, ok: true });
+        }
+
+        if (lastError?.name === "AgentLoopError") {
+          throw lastError;
+        }
+
+        if (lastError) {
+          throw lastError;
+        }
+
+        if (step >= this.cfg.maxSteps) {
+          const loopError = new AgentLoopError("max steps exceeded", step);
+          return Object.assign(err(loopError), { message: "max steps exceeded" });
         }
 
         // Default success result
@@ -241,8 +286,13 @@ export class AgentCore {
       }
       // Bubble the TimeoutError out so tests expecting rejects.toThrow(TimeoutError) succeed
       if (e instanceof TimeoutError) throw e;
-      // For other errors, return err(...) to keep Result pattern, or rethrow if you prefer
-      return err(e instanceof Error ? e : new Error(String(e)));
+      if (e instanceof AgentLoopError || (e as Error)?.name === "AgentLoopError") {
+        throw e;
+      }
+      if (e instanceof Error) {
+        throw e;
+      }
+      throw new Error(String(e));
     } finally {
       // Remove emergency stop listener if needed
       // NOTE: if you have multiple AgentCore instances, consider namespacing events
@@ -253,6 +303,38 @@ export class AgentCore {
   // Add message to context with bounded behavior using BoundedContext
   private addToContext(msg: ContextMessage) {
     this.context.add(msg);
+    this.maybeSummarizeContext();
+  }
+
+  private maybeSummarizeContext() {
+    if (!this.contextSummarizationThreshold) return;
+    if (this.context.getAll().length < this.contextSummarizationThreshold) return;
+
+    const summary = this.context.summarize(5);
+    this.eventBus.emit("context_summarized", {
+      summary: summary.content,
+      removedMessages: summary.originalCount ?? 0,
+    });
+  }
+
+  private async runStepWithTimeout(opts: { signal: AbortSignal; step: number; model?: string }) {
+    if (!this.stepTimeoutMs) {
+      return this.stepOnce(opts);
+    }
+
+    let timeoutId: NodeJS.Timeout | null = null;
+    try {
+      const stepPromise = this.stepOnce(opts);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new AgentLoopError("step timeout exceeded", opts.step));
+        }, this.stepTimeoutMs);
+      });
+
+      return await Promise.race([stepPromise, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
   }
 
   /**
@@ -308,10 +390,15 @@ export class AgentCore {
       this.eventBus.emit("ModelErrorEvent", { agentId: this.cfg.id, step });
     });
 
-    if (modelResult.ok === false) {
-      throw modelResult.error;
+    let modelResponse: ModelOutput;
+    if (modelResult && typeof modelResult === "object" && "ok" in modelResult) {
+      if (modelResult.ok === false) {
+        throw modelResult.error;
+      }
+      modelResponse = (modelResult as { value: ModelOutput }).value;
+    } else {
+      modelResponse = modelResult as ModelOutput;
     }
-    const modelResponse: ModelOutput = modelResult.value;
 
     this.eventBus.emit("ModelResponseEvent", { agentId: this.cfg.id, resp: modelResponse });
 
@@ -321,18 +408,37 @@ export class AgentCore {
       const args = modelResponse.arguments ?? {};
       const sig = this.toolCallSignature(toolId, args);
 
-      // Loop detection
-      const count = (this.toolCallCounts.get(sig) ?? 0) + 1;
-      this.toolCallCounts.set(sig, count);
-      if (count > this.cfg.maxIdenticalToolCalls) {
-        this.eventBus.emit("AgentStepEvent", {
-          agentId: this.cfg.id,
-          step,
-          action: "loop_detected",
-          toolId,
-          count,
-        });
-        throw new AgentLoopError(`Same tool called repeatedly: ${toolId}`, step);
+      const toolRegistered = this.toolEngine.list().some((tool) => tool.id === toolId);
+
+      if (toolRegistered) {
+        // Loop detection (consecutive identical tool calls)
+        if (this.lastToolId === toolId) {
+          this.repeatedToolIdCalls += 1;
+        } else {
+          this.lastToolId = toolId;
+          this.repeatedToolIdCalls = 1;
+        }
+
+        if (this.lastToolSignature === sig) {
+          this.repeatedToolSignatureCalls += 1;
+        } else {
+          this.lastToolSignature = sig;
+          this.repeatedToolSignatureCalls = 1;
+        }
+
+        if (this.repeatedToolIdCalls > this.cfg.maxIdenticalToolCalls) {
+          this.eventBus.emit("AgentStepEvent", {
+            agentId: this.cfg.id,
+            step,
+            action: "loop_detected",
+            toolId,
+            count: this.repeatedToolIdCalls,
+          });
+        }
+
+        if (this.repeatedToolSignatureCalls > this.cfg.maxIdenticalToolCalls) {
+          throw new AgentLoopError(`Same tool called repeatedly: ${toolId}`, step);
+        }
       }
 
       // Invoke tool with permissions
@@ -357,16 +463,15 @@ export class AgentCore {
         content: JSON.stringify({ tool: toolId, args, result: toolResult }),
       });
 
-      // Reset counter on success
-      if (toolResult.ok) {
-        this.toolCallCounts.set(sig, 0);
-      }
-
       return toolResult;
     }
 
     // Handle final answer
     if (modelResponse.type === "final") {
+      this.lastToolSignature = null;
+      this.repeatedToolSignatureCalls = 0;
+      this.lastToolId = null;
+      this.repeatedToolIdCalls = 0;
       this.addToContext({
         role: "assistant",
         content: modelResponse.content || "",
@@ -384,7 +489,6 @@ export class AgentCore {
   }
 
   private toolCallSignature(toolId: string, args: Record<string, unknown>): ToolCallSignature {
-    // Serialize deterministically
     let argsStr: string;
     try {
       argsStr = JSON.stringify(args, Object.keys(args).sort());
@@ -395,12 +499,13 @@ export class AgentCore {
   }
 
   // Emergency stop handler
-  private handleEmergencyStop(evt: EventEnvelope<{ agentId?: string; reason?: string }>) {
-    if (evt.payload?.agentId === this.cfg.id || evt.payload?.agentId === "all") {
+  private handleEmergencyStop(evt: EventEnvelope<{ agentId?: string; reason?: string; payload?: { agentId?: string; reason?: string } }>) {
+    const payload = evt.payload?.payload ?? evt.payload;
+    if (payload?.agentId === this.cfg.id || payload?.agentId === "all") {
       this.stopped = true;
       this.eventBus.emit("AgentFinishEvent", {
         agentId: this.cfg.id,
-        reason: evt.payload?.reason || "emergency_stop",
+        reason: payload?.reason || "emergency_stop",
       });
     }
   }

@@ -14,7 +14,8 @@ import { readFileSync } from "fs";
 import * as path from "path";
 import { Project, Node, SyntaxKind, JSDoc, Symbol as TSSymbol, Type } from "ts-morph";
 import Handlebars from "handlebars";
-import { logger } from "../core/logger";
+import { AriumLogger, ensureLogger } from "../core/logger";
+import { EventBus } from "../core/eventBus";
 
 export interface DocGenerationOptions {
   /** Source directories to scan */
@@ -90,6 +91,7 @@ export class DocumentationGenerator {
   private project: Project;
   private options: DocGenerationOptions;
   private templates: Map<string, HandlebarsTemplateDelegate> = new Map();
+  private logger: AriumLogger;
 
   constructor(options: DocGenerationOptions) {
     this.options = {
@@ -97,6 +99,8 @@ export class DocumentationGenerator {
       includeInternal: false,
       ...options,
     };
+
+    this.logger = ensureLogger(new EventBus());
 
     this.project = new Project({
       tsConfigFilePath: path.join(process.cwd(), "tsconfig.json"),
@@ -116,7 +120,7 @@ export class DocumentationGenerator {
    * Generate documentation
    */
   async generate(): Promise<void> {
-    logger.info("Starting documentation generation", {
+    this.logger.info("Starting documentation generation", {
       sourceDirs: this.options.sourceDirs,
       outputDir: this.options.outputDir,
       formats: this.options.formats,
@@ -131,7 +135,7 @@ export class DocumentationGenerator {
         const items = this.analyzeSourceFile(sourceFile);
         documentation.push(...items);
       } catch (error: any) {
-        logger.warn(`Failed to analyze ${sourceFile.getFilePath()}: ${error.message}`);
+        this.logger.warn(`Failed to analyze ${sourceFile.getFilePath()}: ${error.message}`);
       }
     }
 
@@ -141,7 +145,7 @@ export class DocumentationGenerator {
     }
 
     const duration = Date.now() - startTime;
-    logger.info("Documentation generation completed", {
+    this.logger.info("Documentation generation completed", {
       itemsGenerated: documentation.length,
       duration,
       formats: this.options.formats,
@@ -567,7 +571,7 @@ export class DocumentationGenerator {
           const content = template({ ...item, baseUrl: this.options.baseUrl });
           await fs.writeFile(filePath, content);
         } catch (error: any) {
-          logger.warn(`Failed to generate ${format} for ${item.id}: ${error.message}`);
+          this.logger.warn(`Failed to generate ${format} for ${item.id}: ${error.message}`);
         }
       }
 
@@ -577,7 +581,7 @@ export class DocumentationGenerator {
       await fs.writeFile(indexPath, indexContent);
     }
 
-    logger.info(`Generated ${format} documentation`, {
+    this.logger.info(`Generated ${format} documentation`, {
       outputDir,
       itemCount: documentation.length,
     });
