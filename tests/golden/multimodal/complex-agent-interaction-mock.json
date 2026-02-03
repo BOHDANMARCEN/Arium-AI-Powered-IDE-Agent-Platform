@@ -1,0 +1,33 @@
+{
+  "task": "Calculate 5 + 3 and echo the result",
+  "finalResult": {
+    "ok": true,
+    "value": {
+      "answer": "Mock response: no tool call.",
+      "ok": true
+    }
+  },
+  "steps": [
+    {
+      "type": "tool_call",
+      "tool": "test.math",
+      "args": {
+        "operation": "add",
+        "a": 5,
+        "b": 3
+      }
+    },
+    {
+      "type": "tool_call",
+      "tool": "test.echo",
+      "args": {
+        "message": "8"
+      }
+    },
+    {
+      "type": "response",
+      "content": "Echo: 8"
+    }
+  ],
+  "success": true
+}

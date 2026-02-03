@@ -1,0 +1,19 @@
+{
+  "default": ["vfs.read"],
+  "agent:code-assistant": ["vfs.read", "model.call"],
+  "agent:trusted-ci": ["vfs.read", "vfs.write", "exec.limited"],
+  "fs.read": ["vfs.read"],
+  "fs.write": ["vfs.write"],
+  "fs.delete": ["vfs.delete"],
+  "fs.list": ["vfs.read"],
+  "vfs.diff": ["vfs.read"],
+  "vfs.snapshot": ["vfs.read"],
+  "system.hash": ["vfs.read"],
+  "system.info": [],
+  "text.process": [],
+  "fetch": ["net.fetch"],
+  "exec": ["process.execute"],
+  "py.exec": ["python.execute"],
+  "js.exec": ["js.execute"]
+}
+

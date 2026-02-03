@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <title>Arium — SVG Diagrams</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:#0f172a;color:#e6eef8;padding:24px}
+    .wrap{max-width:1100px;margin:0 auto}
+    h1{font-size:22px;margin-bottom:8px}
+    p.lead{color:#cbd5e1}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);padding:18px;border-radius:12px;margin:18px 0}
+    .svg-box{display:flex;gap:12px;flex-wrap:wrap}
+    svg{background:transparent;border-radius:8px}
+    .note{font-size:13px;color:#9aa8c7}
+    .download{display:inline-block;margin-top:10px;padding:8px 12px;background:#111827;border-radius:8px;color:#cfe3ff;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Arium — SVG diagrams</h1>
+    <p class="lead">Три SVG-діаграми для документації проєкту Arium.</p>
+
+    <div class="card">
+      <h2>1) High-Level Architecture</h2>
+      <p class="note">Схема: UI → Event Bus → Core (Agent, Tool Engine, VFS, Model Adapter)</p>
+      <div class="svg-box">
+        <img src="architecture.svg" alt="Arium high level architecture diagram" style="max-width:100%;height:auto" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2) Event Bus Flow (detailed)</h2>
+      <p class="note">Послідовність подій: Prompt → ModelResponse → ToolInvocation → ToolResult → VFSChange</p>
+      <div class="svg-box">
+        <img src="event-bus-flow.svg" alt="Event bus flow diagram" style="max-width:100%;height:auto" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3) Agent Reasoning Loop (detailed)</h2>
+      <p class="note">Ітеративний цикл: Plan → Generate → Execute → Observe → Repeat</p>
+      <div class="svg-box">
+        <img src="reasoning-loop.svg" alt="Agent reasoning loop diagram" style="max-width:100%;height:auto" />
+      </div>
+    </div>
+
+    <p class="note">Діаграми збережені як окремі SVG файли у директорії <code>assets/diagrams/</code>. Можна використовувати в документації або на веб-сторінках.</p>
+
+  </div>
+</body>
+</html>
+
