@@ -133,6 +133,21 @@ npm start
 
 The UI will open at `http://localhost:3000` and connect to the backend.
 
+## Gradio VSCode UI (Python)
+
+If you prefer a Python UI, run the Gradio VSCode-style interface:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r ui/gradio/requirements.txt
+python ui/gradio/app.py
+```
+
+Defaults:
+- API: `http://localhost:3000` (override in UI or `ARIUM_API_URL`)
+- UI: `http://localhost:7860`
+
 ---
 
 ## Using Ollama (Local Models)

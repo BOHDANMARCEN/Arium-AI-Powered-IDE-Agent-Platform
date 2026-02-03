@@ -348,7 +348,9 @@ OPENAI_API_KEY=sk-xxxx              # Optional: Use OpenAI models
 OPENAI_MODEL=gpt-4o-mini
 USE_OLLAMA=true                     # Optional: Use Ollama (local models)
 OLLAMA_URL=http://localhost:11434
+OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=llama2
+OLLAMA_MODEL_ALLOWLIST=gemma-3-abliterated:latest,llama3.2:3b
 
 # Server Configuration
 PORT=4000
@@ -365,7 +367,7 @@ SANDBOX_MAX_MEMORY_MB=256
 
 **Model Adapter Priority:**
 1. OpenAI (if `OPENAI_API_KEY` is set)
-2. Ollama (if `USE_OLLAMA=true` and Ollama is available)
+2. Ollama (if `USE_OLLAMA=true` or `MODEL_PROVIDER=ollama`)
 3. MockAdapter (fallback for testing)
 
 See [docs/openai-adapter.md](./docs/openai-adapter.md) and [docs/ollama-adapter.md](./docs/ollama-adapter.md) for details.
@@ -545,6 +547,7 @@ See [docs/server-api.md](./docs/server-api.md) for complete API documentation.
 - **[Persistent Storage](./docs/persistent-storage.md)** - Disk storage system
 - **[Built-in Tools](./docs/builtin-tools.md)** - Available tools
 - **[Server API](./docs/server-api.md)** - REST & WebSocket API
+- **[Gradio UI](./docs/gradio-ui.md)** - VSCode-style Python UI
 - **[Quick Start](./QUICKSTART.md)** - Getting started guide
 
 ---
@@ -594,9 +597,51 @@ ollama serve
 export USE_OLLAMA=true
 export OLLAMA_MODEL=llama2
 
+# Optional allowlist
+export OLLAMA_MODEL_ALLOWLIST=gemma-3-abliterated:latest,llama3.2:3b
+
 # Start Arium
 npm run dev
 ```
+
+Ollama models are auto-discovered via `GET /api/tags` with a 30s TTL cache,
+and Arium falls back to `ollama list` if the HTTP API is unavailable. If
+`gemma-3-abliterated:latest` is installed, it is preferred as the default
+model unless `OLLAMA_MODEL` (or a constructor default) is explicitly set.
+List models with `arium ollama list` or `curl http://localhost:11434/api/tags`.
+
+Example model names (namespaces and tags preserved):
+
+```bash
+OLLAMA_MODEL=gemini-3-flash-preview:cloud
+OLLAMA_MODEL=kimi-k2-thinking:cloud
+OLLAMA_MODEL=gpt-oss:120b-cloud
+OLLAMA_MODEL=huihui_ai/qwen3-abliterated:14b
+OLLAMA_MODEL=deepseek-v3.1:671b-cloud
+OLLAMA_MODEL=qwen3-coder:480b-cloud
+OLLAMA_MODEL=huihui_ai/qwen2.5-1m-abliterated:14b
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_MODEL=gpt-oss-20b-quality:latest
+OLLAMA_MODEL=gemma-3-abliterated:latest
+```
+
+### Gradio VSCode UI (Python)
+
+An optional Gradio UI provides a VSCode-like interface that connects to the
+running API (Chat, Tools, VFS, Events, Settings).
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r ui/gradio/requirements.txt
+python ui/gradio/app.py
+```
+
+Defaults:
+- API: `http://localhost:3000` (override in UI or `ARIUM_API_URL`)
+- UI: `http://localhost:7860`
+
+See `docs/gradio-ui.md` for full instructions.
 
 ### Creating Custom Tools
 
