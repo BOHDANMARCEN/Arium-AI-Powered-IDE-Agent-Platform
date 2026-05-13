@@ -454,9 +454,15 @@ export class StressTestRunner {
     const totalExecuted = results.length;
 
     const executionTimes = results.map(r => r.executionTime).sort((a, b) => a - b);
-    const averageExecutionTime = executionTimes.reduce((sum, time) => sum + time, 0) / executionTimes.length;
-    const p95ExecutionTime = executionTimes[Math.floor(executionTimes.length * 0.95)] || 0;
-    const operationsPerSecond = (totalExecuted / totalDuration) * 1000;
+    const averageExecutionTime = executionTimes.length > 0
+      ? executionTimes.reduce((sum, time) => sum + time, 0) / executionTimes.length
+      : 0;
+    const p95ExecutionTime = executionTimes.length > 0
+      ? executionTimes[Math.floor(executionTimes.length * 0.95)] || 0
+      : 0;
+    const safeDurationMs = Math.max(totalDuration, 1);
+    const operationsPerSecond = (totalExecuted / safeDurationMs) * 1000;
+    const successRate = totalExecuted > 0 ? (successful / totalExecuted) * 100 : 0;
 
     // Peak memory usage
     const peakMemoryUsage =
@@ -481,7 +487,7 @@ export class StressTestRunner {
 
     console.log(`\n📊 Stress Test Results:`);
     console.log(`   Executed: ${totalExecuted}`);
-    console.log(`   Successful: ${successful} (${((successful / totalExecuted) * 100).toFixed(1)}%)`);
+    console.log(`   Successful: ${successful} (${successRate.toFixed(1)}%)`);
     console.log(`   Failed: ${failed}`);
     console.log(`   Timed Out: ${timedOut}`);
     console.log(`   Average Execution Time: ${averageExecutionTime.toFixed(2)}ms`);
