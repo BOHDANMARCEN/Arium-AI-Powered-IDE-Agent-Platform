@@ -14,7 +14,7 @@ export class MockAdapter extends BaseModelAdapter {
   id: string = "mock-adapter";
   supportsStreaming: boolean = false;
 
-  constructor(eventBus: EventBus, config?: ModelAdapterConfig) {
+  constructor(eventBus: EventBus = new EventBus(), config?: ModelAdapterConfig) {
     super(eventBus, config);
   }
 

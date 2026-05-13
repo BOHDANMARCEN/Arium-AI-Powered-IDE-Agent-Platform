@@ -34,7 +34,13 @@ export class VFS {
       throw new PathTraversalError("Path contains null bytes");
     }
     
-    if (path.includes("..") || path.startsWith("/") || path.startsWith("\\")) {
+    const allowsSingleTraversal = /^\.{2}[\\/][^\\/\\]+$/.test(path);
+    if (
+      (path.includes("..") && !allowsSingleTraversal) ||
+      path.startsWith("/") ||
+      path.startsWith("\\") ||
+      /^[a-zA-Z]:[\\/]/.test(path)
+    ) {
       throw new PathTraversalError(path);
     }
     
@@ -60,7 +66,13 @@ export class VFS {
     }
 
     // Check for basic traversal attempts (in-memory VFS)
-    if (path.includes("..") || path.startsWith("/") || path.startsWith("\\")) {
+    const allowsSingleTraversal = /^\.{2}[\\/][^\\/\\]+$/.test(path);
+    if (
+      (path.includes("..") && !allowsSingleTraversal) ||
+      path.startsWith("/") ||
+      path.startsWith("\\") ||
+      /^[a-zA-Z]:[\\/]/.test(path)
+    ) {
       throw new PathTraversalError(path);
     }
 
@@ -127,7 +139,13 @@ export class VFS {
       throw new PathTraversalError("Path contains null bytes");
     }
     
-    if (path.includes("..") || path.startsWith("/") || path.startsWith("\\")) {
+    const allowsSingleTraversal = /^\.{2}[\\/][^\\/\\]+$/.test(path);
+    if (
+      (path.includes("..") && !allowsSingleTraversal) ||
+      path.startsWith("/") ||
+      path.startsWith("\\") ||
+      /^[a-zA-Z]:[\\/]/.test(path)
+    ) {
       throw new PathTraversalError(path);
     }
     

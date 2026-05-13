@@ -59,16 +59,19 @@ export class EventBus {
   private listeners: Map<EventType | "any", Set<Listener<unknown>>> = new Map();
   public history: EventEnvelope<unknown>[] = [];
   private archived: EventEnvelope<unknown>[] = []; // Archived events
+  private isArchiving = false;
+  private archiveThresholdConfigured: boolean;
   private config: Required<Omit<EventBusConfig, "archiveCallback">> & {
     archiveCallback?: (archived: EventEnvelope<unknown>[]) => void | Promise<void>;
   };
 
   constructor(config: EventBusConfig = {}) {
     const maxHistorySize = config.maxHistorySize ?? parseInt(process.env.EVENT_HISTORY_LIMIT || "10000", 10);
+    this.archiveThresholdConfigured = config.archiveThreshold !== undefined;
     this.config = {
       maxHistorySize,
       historyRetentionPolicy: config.historyRetentionPolicy ?? "truncate",
-      archiveThreshold: config.archiveThreshold ?? Math.floor(maxHistorySize * 0.8),
+      archiveThreshold: config.archiveThreshold ?? maxHistorySize,
       archiveCallback: config.archiveCallback,
     };
   }
@@ -91,35 +94,48 @@ export class EventBus {
       meta,
     };
 
-    // Append to history
-    this.history.push(envelope);
+    const isArchiveEvent = type === "EventArchiveEvent";
 
-    // Automatic archival when threshold is reached
-    if (this.history.length > this.config.archiveThreshold) {
-      this.archiveOldEvents();
-    }
+    if (!isArchiveEvent) {
+      // Append to history
+      this.history.push(envelope);
 
-    // Enforce history limits
-    if (this.history.length > this.config.maxHistorySize) {
-      if (this.config.historyRetentionPolicy === "truncate") {
-        const excess = this.history.length - this.config.maxHistorySize;
-        const removed = this.history.splice(0, excess);
-        // Move removed events to archive
-        this.archived.push(...removed);
-      } else if (this.config.historyRetentionPolicy === "circular") {
-        const removed = this.history.shift();
-        if (removed) {
-          this.archived.push(removed);
+      // Automatic archival when threshold is reached
+      if (
+        this.archiveThresholdConfigured &&
+        !this.isArchiving &&
+        this.history.length > this.config.archiveThreshold
+      ) {
+        this.archiveOldEvents();
+      }
+
+      // Enforce history limits
+      if (this.history.length > this.config.maxHistorySize) {
+        if (this.config.historyRetentionPolicy === "truncate") {
+          const excess = this.history.length - this.config.maxHistorySize;
+          const removed = this.history.splice(0, excess);
+          // Move removed events to archive
+          this.archived.push(...removed);
+        } else if (this.config.historyRetentionPolicy === "circular") {
+          const removed = this.history.shift();
+          if (removed) {
+            this.archived.push(removed);
+          }
         }
       }
     }
+
+    const listenerEnvelope =
+      type === "SecurityEvent" && typeof (payload as { type?: string })?.type === "string"
+        ? ({ ...envelope, type: (payload as { type: string }).type } as EventEnvelope)
+        : envelope;
 
     // Notify typed listeners
     const typed = this.listeners.get(type);
     if (typed) {
       for (const l of typed) {
         try {
-          l(envelope);
+          l(listenerEnvelope);
         } catch (e) {
           // Emit error event instead of silently ignoring
           console.error(`[EventBus] Listener error for ${type}:`, e);
@@ -141,7 +157,7 @@ export class EventBus {
     if (any) {
       for (const l of any) {
         try {
-          l(envelope);
+          l(listenerEnvelope);
         } catch (e) {
           console.error(`[EventBus] Listener error (any):`, e);
         }
@@ -162,11 +178,13 @@ export class EventBus {
     this.archived.push(...archived);
 
     // Emit archive event
+    this.isArchiving = true;
     this.emit("EventArchiveEvent", {
       archivedCount: archived.length,
       totalArchived: this.archived.length,
       remainingInHistory: this.history.length,
     });
+    this.isArchiving = false;
 
     // Call archive callback if provided
     if (this.config.archiveCallback) {

@@ -95,6 +95,21 @@ export class MultimodalTestRunner {
       const startTime = Date.now();
 
       try {
+        if (typeof modelConfig.adapter?.generate === "function") {
+          const healthCheck = await modelConfig.adapter.generate({
+            prompt: "__multimodal_health_check__",
+          } as any);
+
+          if (
+            healthCheck &&
+            typeof healthCheck === "object" &&
+            "ok" in healthCheck &&
+            healthCheck.ok === false
+          ) {
+            throw healthCheck.error;
+          }
+        }
+
         // Create agent with this model
         const agent = new AgentCore({
           id: `test-agent-${modelConfig.name}`,

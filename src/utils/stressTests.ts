@@ -9,6 +9,7 @@ import { ToolEngine } from "../core/tool-engine";
 import { EventBus } from "../core/eventBus";
 import { VFS } from "../core/vfs";
 import { registerBuiltinTools } from "../core/tools/builtinTools";
+import { FULL_PERMISSIONS } from "../core/agent/permissions";
 import * as os from "os";
 import * as process from "process";
 
@@ -87,6 +88,7 @@ export class StressTestRunner {
   private vfs: VFS;
   private monitoringActive = false;
   private resourceHistory: ResourceSnapshot[] = [];
+  private caller = { id: "stress-test", permissions: FULL_PERMISSIONS };
 
   constructor(config: Partial<StressTestConfig> = {}) {
     this.config = {
@@ -107,6 +109,45 @@ export class StressTestRunner {
 
     // Register built-in tools
     registerBuiltinTools(this.toolEngine, this.vfs);
+
+    // Register test utilities
+    this.toolEngine.register(
+      {
+        id: "test.echo",
+        name: "Echo Tool",
+        runner: "builtin",
+        schema: {
+          type: "object",
+          properties: {
+            message: { type: "string" },
+          },
+          required: ["message"],
+        },
+      },
+      async (args: any) => ({ ok: true, data: `Echo: ${args.message}` })
+    );
+
+    this.toolEngine.register(
+      {
+        id: "test.math",
+        name: "Math Tool",
+        runner: "builtin",
+        schema: {
+          type: "object",
+          properties: {
+            operation: { type: "string", enum: ["add", "multiply"] },
+            a: { type: "number" },
+            b: { type: "number" },
+          },
+          required: ["operation", "a", "b"],
+        },
+      },
+      async (args: any) => {
+        const result =
+          args.operation === "add" ? args.a + args.b : args.a * args.b;
+        return { ok: true, data: { result } };
+      }
+    );
   }
 
   /**
@@ -149,6 +190,8 @@ export class StressTestRunner {
       async (_, i) => {
         await semaphore.acquire();
 
+        const operationStart = Date.now();
+
         try {
           // Rate limiting
           const now = Date.now();
@@ -168,7 +211,6 @@ export class StressTestRunner {
           operationsInWindow++;
 
           // Execute operation with timeout
-          const operationStart = Date.now();
           const timeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => reject(new Error("Operation timeout")), this.config.operationTimeout);
           });
@@ -178,7 +220,7 @@ export class StressTestRunner {
             timeoutPromise,
           ]);
 
-          const executionTime = Date.now() - operationStart;
+          const executionTime = Math.max(1, Date.now() - operationStart);
 
           results.push({
             success: true,
@@ -187,7 +229,7 @@ export class StressTestRunner {
           });
 
         } catch (error: any) {
-          const executionTime = Date.now() - startTime;
+          const executionTime = Math.max(1, Date.now() - operationStart);
 
           results.push({
             success: false,
@@ -246,7 +288,7 @@ export class StressTestRunner {
       description: `Stress test for tool: ${toolId}`,
       operation: async (iteration) => {
         const args = argsFactory(iteration);
-        const result = await this.toolEngine.invoke(toolId, args);
+        const result = await this.toolEngine.invoke(toolId, args, this.caller);
         if (!result.ok) {
           throw new Error(result.error?.message || "Tool execution failed");
         }
@@ -271,18 +313,26 @@ export class StressTestRunner {
         const content = `Content for file ${iteration} - ${Date.now()}`;
 
         // Write file
-        const writeResult = await this.toolEngine.invoke("fs.write", {
-          path: fileName,
-          content,
-        });
+        const writeResult = await this.toolEngine.invoke(
+          "fs.write",
+          {
+            path: fileName,
+            content,
+          },
+          this.caller
+        );
         if (!writeResult.ok) {
           throw new Error(`Write failed: ${writeResult.error?.message}`);
         }
 
         // Read file
-        const readResult = await this.toolEngine.invoke("fs.read", {
-          path: fileName,
-        });
+        const readResult = await this.toolEngine.invoke(
+          "fs.read",
+          {
+            path: fileName,
+          },
+          this.caller
+        );
         if (!readResult.ok) {
           throw new Error(`Read failed: ${readResult.error?.message}`);
         }
@@ -292,9 +342,13 @@ export class StressTestRunner {
         }
 
         // Delete file
-        const deleteResult = await this.toolEngine.invoke("fs.delete", {
-          path: fileName,
-        });
+        const deleteResult = await this.toolEngine.invoke(
+          "fs.delete",
+          {
+            path: fileName,
+          },
+          this.caller
+        );
         if (!deleteResult.ok) {
           throw new Error(`Delete failed: ${deleteResult.error?.message}`);
         }
@@ -309,25 +363,33 @@ export class StressTestRunner {
     const operations = [
       // Echo operation
       async (i: number) => {
-        const result = await this.toolEngine.invoke("test.echo", {
-          message: `Hello ${i}`,
-        });
+        const result = await this.toolEngine.invoke(
+          "test.echo",
+          {
+            message: `Hello ${i}`,
+          },
+          this.caller
+        );
         if (!result.ok) throw new Error("Echo failed");
         return result;
       },
       // Math operation
       async (i: number) => {
-        const result = await this.toolEngine.invoke("test.math", {
-          operation: "add",
-          a: i,
-          b: i + 1,
-        });
+        const result = await this.toolEngine.invoke(
+          "test.math",
+          {
+            operation: "add",
+            a: i,
+            b: i + 1,
+          },
+          this.caller
+        );
         if (!result.ok) throw new Error("Math failed");
         return result;
       },
       // System info
       async () => {
-        const result = await this.toolEngine.invoke("system.info", {});
+        const result = await this.toolEngine.invoke("system.info", {}, this.caller);
         if (!result.ok) throw new Error("System info failed");
         return result;
       },
@@ -397,7 +459,10 @@ export class StressTestRunner {
     const operationsPerSecond = (totalExecuted / totalDuration) * 1000;
 
     // Peak memory usage
-    const peakMemoryUsage = Math.max(...this.resourceHistory.map(r => r.memoryUsage));
+    const peakMemoryUsage =
+      this.resourceHistory.length > 0
+        ? Math.max(...this.resourceHistory.map(r => r.memoryUsage))
+        : 0;
 
     // CPU usage (simplified)
     const cpuUsage = {

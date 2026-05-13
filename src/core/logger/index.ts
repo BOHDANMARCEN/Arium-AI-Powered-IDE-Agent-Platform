@@ -309,11 +309,19 @@ export class AriumLogger {
  */
 let globalLogger: AriumLogger | null = null;
 
+function syncGlobalLogger(): void {
+  const globalValue = (globalThis as { globalLogger?: AriumLogger | null }).globalLogger;
+  if (globalValue !== undefined) {
+    globalLogger = globalValue ?? null;
+  }
+}
+
 /**
  * Initialize global logger
  */
 export function initializeLogger(eventBus: EventBus, config: Partial<LoggerConfig> = {}): AriumLogger {
   globalLogger = new AriumLogger(eventBus, config);
+  (globalThis as { globalLogger?: AriumLogger | null }).globalLogger = globalLogger;
   return globalLogger;
 }
 
@@ -321,8 +329,24 @@ export function initializeLogger(eventBus: EventBus, config: Partial<LoggerConfi
  * Get global logger instance
  */
 export function getLogger(): AriumLogger {
+  syncGlobalLogger();
   if (!globalLogger) {
     throw new Error("Logger not initialized. Call initializeLogger() first.");
+  }
+  return globalLogger;
+}
+
+/**
+ * Ensure a global logger exists, creating a default one if needed.
+ */
+export function ensureLogger(
+  eventBus: EventBus = new EventBus(),
+  config: Partial<LoggerConfig> = {}
+): AriumLogger {
+  syncGlobalLogger();
+  if (!globalLogger) {
+    globalLogger = new AriumLogger(eventBus, config);
+    (globalThis as { globalLogger?: AriumLogger | null }).globalLogger = globalLogger;
   }
   return globalLogger;
 }

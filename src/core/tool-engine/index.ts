@@ -218,15 +218,19 @@ export class ToolEngine {
   async invoke(
     toolId: string,
     args: Record<string, unknown>,
-    caller?: { id?: string; permissions?: Permission[] }
+    caller?: { id?: string; permissions?: Permission[] } | Permission[]
   ): Promise<ToolExecutionResult> {
     const t = this.tools.get(toolId);
     if (!t) {
       return { ok: false, error: { message: "tool not found", toolId, code: "tool_not_found" } };
     }
 
+    const callerInfo = Array.isArray(caller)
+      ? { id: "anonymous", permissions: caller }
+      : caller;
+
     // Check rate limiting (token bucket)
-    const callerId = caller?.id || "anonymous";
+    const callerId = callerInfo?.id || "anonymous";
     const rateLimitKey = `${callerId}:${toolId}`;
     const allowed = this.rateLimiter.allow(rateLimitKey, 1);
 
@@ -254,7 +258,7 @@ export class ToolEngine {
     // Check permissions using PermissionManager
     const required = t.def.permissions || [];
     const callerPerms = PermissionManager.validatePermissionStrings(
-      caller?.permissions || []
+      callerInfo?.permissions || []
     ) as Permission[];
 
     const permissionCheck = this.permissionManager.checkPermissions(
@@ -262,7 +266,7 @@ export class ToolEngine {
       callerPerms,
       {
         toolId,
-        callerId: caller?.id || "anonymous",
+        callerId,
       }
     );
 
@@ -353,15 +357,19 @@ export class ToolEngine {
   executeAsync(
     toolId: string,
     args: Record<string, unknown>,
-    caller?: { id?: string; permissions?: Permission[] }
+    caller?: { id?: string; permissions?: Permission[] } | Permission[]
   ) {
     const t = this.tools.get(toolId);
     if (!t) {
       throw new Error("Tool not found: " + toolId);
     }
 
+    const callerInfo = Array.isArray(caller)
+      ? { id: "anonymous", permissions: caller }
+      : caller;
+
     // Check rate limiting (token bucket)
-    const callerId = caller?.id || "anonymous";
+    const callerId = callerInfo?.id || "anonymous";
     const rateLimitKey = `${callerId}:${toolId}`;
     const allowed = this.rateLimiter.allow(rateLimitKey, 1);
 
@@ -380,7 +388,7 @@ export class ToolEngine {
     // Check permissions using PermissionManager
     const required = t.def.permissions || [];
     const callerPerms = PermissionManager.validatePermissionStrings(
-      caller?.permissions || []
+      callerInfo?.permissions || []
     ) as Permission[];
 
     const permissionCheck = this.permissionManager.checkPermissions(
@@ -388,7 +396,7 @@ export class ToolEngine {
       callerPerms,
       {
         toolId,
-        callerId: caller?.id || "anonymous",
+        callerId,
       }
     );
 
