@@ -507,7 +507,7 @@ export class StressTestRunner {
       peakMemoryUsage,
       cpuUsage,
       errors,
-      resourceHistory: this.resourceHistory,
+      resourceHistory: [...this.resourceHistory],
     };
   }
 }
